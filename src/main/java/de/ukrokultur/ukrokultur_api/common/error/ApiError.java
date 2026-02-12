@@ -1,0 +1,19 @@
+package de.ukrokultur.ukrokultur_api.common.error;
+
+import java.time.Instant;
+import java.util.Map;
+
+public record ApiError(
+        Instant timestamp,
+        int status,
+        String error,
+        ErrorCode code,
+        String message,
+        String path,
+        Map<String, String> fieldErrors
+) {
+    public static ApiError of(int status, String error, ErrorCode code, String message, String path, Map<String, String> fieldErrors) {
+        return new ApiError(Instant.now(), status, error, code, message, path, fieldErrors);
+    }
+}
+
