@@ -1,6 +1,7 @@
 package de.ukrokultur.ukrokultur_api.home;
 
 import jakarta.persistence.*;
+import java.util.UUID;
 
 @Entity
 @Table(name = "home_work_field_item")
@@ -9,7 +10,8 @@ public class HomeWorkFieldItem {
     @Id
     @Column(length = 120)
     private String id;
-
+    @Column(name = "public_id", nullable = false, unique = true)
+    private UUID publicId;
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
@@ -29,12 +31,16 @@ public class HomeWorkFieldItem {
     private String descriptionDe;
     @Column(name = "description_uk", nullable = false)
     private String descriptionUk;
+    @PrePersist
+    public void prePersist() {
+        if (publicId == null) publicId = UUID.randomUUID();
+    }
 
-    // getters/setters
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
-
+    public UUID getPublicId() { return publicId; }
+    public void setPublicId(UUID publicId) { this.publicId = publicId; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
 

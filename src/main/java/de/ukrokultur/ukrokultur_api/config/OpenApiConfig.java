@@ -38,7 +38,11 @@ public class OpenApiConfig {
     public GroupedOpenApi publicApi() {
         return GroupedOpenApi.builder()
                 .group("public")
-                .pathsToMatch("/news/**", "/contact/**")
+                .pathsToMatch("/news/**",
+                        "/contact/**",
+                        "/home/**",
+                        "/about/**",
+                        "/projects/**")
                 .build();
     }
 

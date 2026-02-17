@@ -4,12 +4,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     boolean existsBySlug(String slug);
 
-    java.util.Optional<Project> findBySlug(String slug);
+    Optional<Project> findBySlug(String slug);
+    Optional<Project> findByPublicId(UUID publicId);
 
     @Query("""
            select p from Project p

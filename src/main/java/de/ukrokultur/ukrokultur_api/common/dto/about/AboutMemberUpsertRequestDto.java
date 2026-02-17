@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 public record AboutMemberUpsertRequestDto(
-        @NotBlank String id,
+        @NotBlank String slug,
         @NotBlank String name,
         String image,
         @NotNull Integer order,

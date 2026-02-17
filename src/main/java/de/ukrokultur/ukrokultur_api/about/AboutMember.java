@@ -1,15 +1,19 @@
 package de.ukrokultur.ukrokultur_api.about;
 
 import jakarta.persistence.*;
-
+import org.hibernate.annotations.UuidGenerator;
+import java.util.UUID;
 @Entity
 @Table(name = "about_member")
 public class AboutMember {
 
     @Id
-    @Column(length = 120)
-    private String id;
+    @UuidGenerator
+    @Column(name = "id", nullable = false, updatable = false)
+    private UUID id;
 
+    @Column(name = "slug", nullable = false, unique = true, length = 120)
+    private String slug;
     @Column(nullable = false, length = 200)
     private String name;
 
@@ -38,11 +42,9 @@ public class AboutMember {
             @AttributeOverride(name = "uk", column = @Column(name = "biography_uk", columnDefinition = "text"))
     })
     private I18nEmbeddable biography;
-
-    // getters/setters
-
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    public UUID getId() { return id; }
+    public String getSlug() { return slug; }
+    public void setSlug(String slug) { this.slug = slug; }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }

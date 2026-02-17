@@ -11,9 +11,10 @@ import de.ukrokultur.ukrokultur_api.common.exception.NotFoundException;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.util.StringUtils;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.UUID;
 
 @Service
 @Transactional
@@ -45,22 +46,26 @@ public class NewsService {
     }
 
     public NewsItemDto create(NewsUpsertRequestDto req) {
-        String slug = req.id().trim();
-        if (newsRepository.existsBySlug(slug)) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "News id already exists: " + slug);
+        News n = new News();
+
+        applyUpsert(n, req);
+
+        if (StringUtils.hasText(n.getSlug()) && newsRepository.existsBySlug(n.getSlug())) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug already exists: " + n.getSlug());
         }
 
-        News n = new News();
-        applyUpsert(n, req);
         return toItemDto(newsRepository.save(n));
     }
 
-    public NewsItemDto update(String slug, NewsUpsertRequestDto req) {
-        News n = newsRepository.findBySlug(slug)
-                .orElseThrow(() -> NotFoundException.of("News", slug));
+    public NewsItemDto update(UUID publicId, NewsUpsertRequestDto req) {
+        News n = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
 
-        if (!slug.equals(req.id().trim())) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "id cannot be changed");
+        String newSlug = safeTrim(req.slug());
+        if (StringUtils.hasText(newSlug) && !Objects.equals(newSlug, n.getSlug())) {
+            if (newsRepository.existsBySlug(newSlug)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug already exists: " + newSlug);
+            }
         }
 
 
@@ -68,15 +73,18 @@ public class NewsService {
 
         return toItemDto(n);
     }
-
-    public void delete(String slug) {
-        News n = newsRepository.findBySlug(slug)
-                .orElseThrow(() -> NotFoundException.of("News", slug));
+    private static String safeTrim(String s) {
+        if (!StringUtils.hasText(s)) return null;
+        return s.trim();
+    }
+    public void delete(UUID publicId) {
+        News n = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
         newsRepository.delete(n);
     }
 
     private void applyUpsert(News n, NewsUpsertRequestDto req) {
-        n.setSlug(req.id().trim());
+        n.setSlug(safeTrim(req.slug()));
         n.setPublished(Boolean.TRUE.equals(req.published()));
         n.setEventDate(req.eventDate());
 
@@ -170,6 +178,7 @@ public class NewsService {
         }
 
         return new NewsItemDto(
+                n.getPublicId() == null ? null : n.getPublicId().toString(),
                 n.getSlug(),
                 n.getPublishedAt() == null ? null : n.getPublishedAt().toLocalDate(),
                 n.getEventDate(),

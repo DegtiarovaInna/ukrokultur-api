@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @Tag(name = "Projects", description = "Public projects and admin CRUD.")
 @RestController
@@ -37,14 +38,14 @@ public class ProjectController {
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Update project")
     @PutMapping("/admin/projects/{id}")
-    public ProjectItemDto update(@PathVariable String id, @RequestBody @Valid ProjectUpsertRequestDto req) {
+    public ProjectItemDto update(@PathVariable UUID id, @RequestBody @Valid ProjectUpsertRequestDto req) {
         return service.update(id, req);
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Delete project")
     @DeleteMapping("/admin/projects/{id}")
-    public void delete(@PathVariable String id) {
+    public void delete(@PathVariable UUID id) {
         service.delete(id);
     }
 }

@@ -8,9 +8,11 @@ import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import de.ukrokultur.ukrokultur_api.common.exception.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.Objects;
 
 @Service
 @Transactional
@@ -28,21 +30,25 @@ public class ProjectService {
     }
 
     public ProjectItemDto create(ProjectUpsertRequestDto req) {
-        String slug = req.id().trim();
-        if (repo.existsBySlug(slug)) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Project id already exists: " + slug);
+        Project p = new Project();
+
+        applyUpsert(p, req);
+
+        if (StringUtils.hasText(p.getSlug()) && repo.existsBySlug(p.getSlug())) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug already exists: " + p.getSlug()); // CHANGED
         }
 
-        Project p = new Project();
-        applyUpsert(p, req);
         return toDto(repo.save(p));
     }
 
-    public ProjectItemDto update(String slug, ProjectUpsertRequestDto req) {
-        Project p = repo.findBySlug(slug).orElseThrow(() -> NotFoundException.of("Project", slug));
+    public ProjectItemDto update(UUID publicId, ProjectUpsertRequestDto req) {
+        Project p = repo.findByPublicId(publicId).orElseThrow(() -> NotFoundException.of("Project", publicId));
 
-        if (!slug.equals(req.id().trim())) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "id cannot be changed");
+        String newSlug = safeTrim(req.slug());
+        if (StringUtils.hasText(newSlug) && !Objects.equals(newSlug, p.getSlug())) {
+            if (repo.existsBySlug(newSlug)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug already exists: " + newSlug); // CHANGED
+            }
         }
 
         applyUpsert(p, req);
@@ -50,20 +56,19 @@ public class ProjectService {
         return toDto(p);
     }
 
-    public void delete(String slug) {
-        Project p = repo.findBySlug(slug).orElseThrow(() -> NotFoundException.of("Project", slug));
+    public void delete(UUID publicId) {
+        Project p = repo.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("Project", publicId));
         repo.delete(p);
     }
 
     private void applyUpsert(Project p, ProjectUpsertRequestDto req) {
-        p.setSlug(req.id().trim());
+        p.setSlug(safeTrim(req.slug()));
         p.setPublished(Boolean.TRUE.equals(req.published()));
-
 
         upsertTranslation(p, "en", req.title().en(), req.content().en());
         upsertTranslation(p, "de", req.title().de(), req.content().de());
         upsertTranslation(p, "uk", req.title().uk(), req.content().uk());
-
 
         p.clearImages();
         if (req.images() != null && !req.images().isEmpty()) {
@@ -121,6 +126,7 @@ public class ProjectService {
         }
 
         return new ProjectItemDto(
+                p.getPublicId() == null ? null : p.getPublicId().toString(),
                 p.getSlug(),
                 title,
                 content,
@@ -129,5 +135,10 @@ public class ProjectService {
                 p.getCreatedAt(),
                 p.getUpdatedAt()
         );
+    }
+
+    private static String safeTrim(String s) {
+        if (!StringUtils.hasText(s)) return null;
+        return s.trim();
     }
 }

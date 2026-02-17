@@ -7,9 +7,11 @@ import de.ukrokultur.ukrokultur_api.common.error.ErrorCode;
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.util.StringUtils;
 import java.util.List;
-
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 @Service
 @Transactional
 public class HomeService {
@@ -24,11 +26,9 @@ public class HomeService {
         this.workRepo = workRepo;
     }
 
-    @Transactional(readOnly = true)
     public HomeResponseDto getPublic() {
         HomePage page = getOrCreate();
         List<HomeWorkFieldItem> items = workRepo.findAllByOrderBySortOrderAsc();
-
 
         List<HomeResponseDto.HomeWorkFieldItemDto> itemDtos = items.stream()
                 .filter(HomeWorkFieldItem::isPublished)
@@ -38,7 +38,7 @@ public class HomeService {
         return toResponse(page, itemDtos);
     }
 
-    @Transactional(readOnly = true)
+
     public HomeResponseDto getAdmin() {
         HomePage page = getOrCreate();
         List<HomeWorkFieldItem> items = workRepo.findAllByOrderBySortOrderAsc();
@@ -56,12 +56,24 @@ public class HomeService {
         applyPage(page, req);
 
 
-        workRepo.deleteAllInBatch();
+        List<HomeWorkFieldItem> existing = workRepo.findAll();
+        Map<String, HomeWorkFieldItem> bySlug = existing.stream()
+                .collect(Collectors.toMap(HomeWorkFieldItem::getId, Function.identity(), (a, b) -> a));
+
+        Set<String> incomingSlugs = new HashSet<>();
 
         if (req.workFields() != null && req.workFields().items() != null) {
             for (HomeUpsertRequestDto.HomeWorkFieldItemUpsertDto it : req.workFields().items()) {
-                HomeWorkFieldItem e = new HomeWorkFieldItem();
-                e.setId(it.id().trim());
+
+                String slug = safeTrim(it.slug());
+                if (!StringUtils.hasText(slug)) {
+                    throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "workFields.items.slug is required");
+                }
+
+                incomingSlugs.add(slug);
+
+                HomeWorkFieldItem e = bySlug.getOrDefault(slug, new HomeWorkFieldItem());
+                e.setId(slug);
                 e.setSortOrder(it.order());
                 e.setPublished(Boolean.TRUE.equals(it.published()));
 
@@ -79,8 +91,14 @@ public class HomeService {
             }
         }
 
-        pageRepo.save(page);
 
+        for (HomeWorkFieldItem old : existing) {
+            if (!incomingSlugs.contains(old.getId())) {
+                workRepo.delete(old);
+            }
+        }
+
+        pageRepo.save(page);
         return getAdmin();
     }
 
@@ -144,6 +162,7 @@ public class HomeService {
 
     private HomeResponseDto.HomeWorkFieldItemDto toItemDto(HomeWorkFieldItem e) {
         return new HomeResponseDto.HomeWorkFieldItemDto(
+                e.getPublicId() == null ? null : e.getPublicId().toString(),
                 e.getId(),
                 e.getSortOrder(),
                 e.isPublished(),
@@ -173,5 +192,10 @@ public class HomeService {
         );
 
         return new HomeResponseDto(hero, mission, workFields, page.getUpdatedAt());
+    }
+
+    private static String safeTrim(String s) {
+        if (!StringUtils.hasText(s)) return null;
+        return s.trim();
     }
 }

@@ -7,7 +7,7 @@ import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import de.ukrokultur.ukrokultur_api.common.exception.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import java.util.UUID;
 import java.util.List;
 
 @Service
@@ -22,7 +22,7 @@ public class AboutService {
         this.memberRepository = memberRepository;
     }
 
-    @Transactional(readOnly = true)
+
     public AboutResponseDto getPublic() {
         AboutIntro intro = getOrCreateIntro();
         List<AboutMember> members = memberRepository.findAllOrdered();
@@ -36,7 +36,7 @@ public class AboutService {
         return new AboutResponseDto(introDto, memberDtos, intro.getUpdatedAt());
     }
 
-    @Transactional(readOnly = true)
+
     public AboutIntroDto getIntroAdmin() {
         return toIntroDto(getOrCreateIntro());
     }
@@ -59,34 +59,38 @@ public class AboutService {
     }
 
     public AboutMemberDto createMember(AboutMemberUpsertRequestDto req) {
-        String id = req.id().trim();
-        if (memberRepository.existsById(id)) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Member id already exists: " + id);
+        String slug = req.slug().trim();
+
+        if (memberRepository.existsBySlug(slug)) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Member slug already exists: " + slug);
         }
+
         AboutMember m = new AboutMember();
-        apply(m, req);
+        apply(m, req, slug);
         return toMemberDto(memberRepository.save(m));
     }
 
-    public AboutMemberDto updateMember(String id, AboutMemberUpsertRequestDto req) {
+    public AboutMemberDto updateMember(UUID id, AboutMemberUpsertRequestDto req) {
         AboutMember m = memberRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.of("AboutMember", id));
 
-        if (!id.equals(req.id().trim())) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "id cannot be changed");
+        String newSlug = req.slug().trim();
+
+        if (!m.getSlug().equals(newSlug) && memberRepository.existsBySlug(newSlug)) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Member slug already exists: " + newSlug);
         }
-        apply(m, req);
+
+        apply(m, req, newSlug);
         return toMemberDto(memberRepository.save(m));
     }
 
-    public void deleteMember(String id) {
+    public void deleteMember(UUID id) {
         AboutMember m = memberRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.of("AboutMember", id));
         memberRepository.delete(m);
     }
 
     private AboutIntro getOrCreateIntro() {
-        // храним одну запись intro
         return introRepository.findAll().stream().findFirst().orElseGet(() -> {
             AboutIntro i = new AboutIntro();
             i.setImage(null);
@@ -98,8 +102,8 @@ public class AboutService {
         });
     }
 
-    private void apply(AboutMember m, AboutMemberUpsertRequestDto req) {
-        m.setId(req.id().trim());
+    private void apply(AboutMember m, AboutMemberUpsertRequestDto req, String slug) {
+        m.setSlug(slug);
         m.setName(req.name().trim());
         m.setImage(req.image());
         m.setOrder(req.order());
@@ -120,7 +124,8 @@ public class AboutService {
 
     private AboutMemberDto toMemberDto(AboutMember m) {
         return new AboutMemberDto(
-                m.getId(),
+                m.getId() == null ? null : m.getId().toString(),
+                m.getSlug(),
                 m.getName(),
                 m.getImage(),
                 m.getOrder(),

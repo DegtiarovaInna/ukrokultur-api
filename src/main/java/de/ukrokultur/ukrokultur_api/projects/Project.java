@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Entity
 @Table(name = "project")
@@ -14,7 +15,8 @@ public class Project {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
+    @Column(name = "public_id", nullable = false, unique = true)
+    private UUID publicId;
     @Column(name="slug", unique = true, length = 200)
     private String slug;
 
@@ -33,13 +35,18 @@ public class Project {
 
     @Column(name="updated_at", nullable = false)
     private OffsetDateTime updatedAt = OffsetDateTime.now();
-
+    @PrePersist
+    public void prePersist() {
+        if (publicId == null) publicId = UUID.randomUUID();
+    }
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = OffsetDateTime.now();
     }
 
     public Long getId() { return id; }
+    public UUID getPublicId() { return publicId; }
+    public void setPublicId(UUID publicId) { this.publicId = publicId; }
     public String getSlug() { return slug; }
     public boolean isPublished() { return published; }
     public List<ProjectTranslation> getTranslations() { return translations; }

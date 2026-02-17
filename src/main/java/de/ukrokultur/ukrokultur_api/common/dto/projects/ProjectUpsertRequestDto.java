@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 
 public record ProjectUpsertRequestDto(
-        @NotBlank String id,
+        String slug,
         @NotNull I18nText title,
         @NotNull I18nText content,
         List<String> images,

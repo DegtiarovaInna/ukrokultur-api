@@ -7,6 +7,7 @@ import java.util.List;
 
 public record ProjectItemDto(
         String id,
+        String slug,
         I18nText title,
         I18nText content,
         List<String> images,

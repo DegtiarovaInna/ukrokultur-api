@@ -15,6 +15,7 @@ import de.ukrokultur.ukrokultur_api.common.dto.news.NewsItemDto;
 import de.ukrokultur.ukrokultur_api.common.dto.news.NewsUpsertRequestDto;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 
 @Tag(name = "News", description = "Public news feed and admin CRUD.")
 @RestController
@@ -63,8 +64,8 @@ public class NewsController {
             @ApiResponse(responseCode = "404", description = "Not found", content = @Content(schema = @Schema(implementation = de.ukrokultur.ukrokultur_api.common.error.ApiError.class)))
     })
     @PutMapping("/admin/news/{id}")
-    public NewsItemDto update(@PathVariable String id, @RequestBody @Valid NewsUpsertRequestDto req) {
-        return newsService.update(id, req);
+    public NewsItemDto update(@PathVariable UUID id, @RequestBody @Valid NewsUpsertRequestDto req) { // CHANGED
+        return newsService.update(id, req); // CHANGED
     }
 
     @SecurityRequirement(name = de.ukrokultur.ukrokultur_api.config.OpenApiConfig.BEARER_SCHEME_NAME)
@@ -76,7 +77,7 @@ public class NewsController {
             @ApiResponse(responseCode = "404", description = "Not found", content = @Content(schema = @Schema(implementation = de.ukrokultur.ukrokultur_api.common.error.ApiError.class)))
     })
     @DeleteMapping("/admin/news/{id}")
-    public void delete(@PathVariable String id) {
+    public void delete(@PathVariable UUID id) {
         newsService.delete(id);
     }
 }

@@ -4,6 +4,7 @@ import de.ukrokultur.ukrokultur_api.common.dto.I18nText;
 
 public record AboutMemberDto(
         String id,
+        String slug,
         String name,
         String image,
         int order,

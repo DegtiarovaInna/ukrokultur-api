@@ -1,4 +1,5 @@
--- V12__create_home.sql
+-- V11__create_home.sql
+create extension if not exists pgcrypto;
 
 create table if not exists home_page (
     id bigserial primary key,
@@ -28,6 +29,8 @@ create table if not exists home_page (
 
 create table if not exists home_work_field_item (
     id varchar(120) primary key,
+    public_id uuid not null default gen_random_uuid() unique,
+
     sort_order int not null default 0,
     published boolean not null default true,
 
@@ -41,3 +44,4 @@ create table if not exists home_work_field_item (
 );
 
 create index if not exists idx_home_work_field_sort on home_work_field_item(sort_order);
+create index if not exists idx_home_work_field_public_id on home_work_field_item(public_id);

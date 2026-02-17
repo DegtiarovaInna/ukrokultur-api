@@ -11,7 +11,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
-
+import java.util.UUID;
 import java.util.List;
 
 @Tag(name = "About")
@@ -39,9 +39,6 @@ public class AboutController {
 
 
     // Admin
-
-
-
     @Operation(summary = "Get about intro (admin)")
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @ApiResponses({
@@ -114,8 +111,10 @@ public class AboutController {
                     content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
     @PutMapping("/members/{id}")
-    public AboutMemberDto updateMember(@PathVariable String id,
-                                       @Valid @RequestBody AboutMemberUpsertRequestDto req) {
+    public AboutMemberDto updateMember(
+            @PathVariable UUID id,
+            @Valid @RequestBody AboutMemberUpsertRequestDto req
+    ) {
         return aboutService.updateMember(id, req);
     }
 
@@ -129,7 +128,7 @@ public class AboutController {
                     content = @Content(schema = @Schema(implementation = ApiError.class)))
     })
     @DeleteMapping("/members/{id}")
-    public void deleteMember(@PathVariable String id) {
+    public void deleteMember(@PathVariable UUID id) {
         aboutService.deleteMember(id);
     }
 }
