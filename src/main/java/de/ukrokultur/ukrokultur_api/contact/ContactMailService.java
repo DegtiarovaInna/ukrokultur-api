@@ -3,6 +3,8 @@ package de.ukrokultur.ukrokultur_api.contact;
 import de.ukrokultur.ukrokultur_api.common.dto.ContactFormRequestDto;
 import de.ukrokultur.ukrokultur_api.common.error.ErrorCode;
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -14,6 +16,8 @@ import java.util.Map;
 
 @Service
 public class ContactMailService {
+
+    private static final Logger log = LoggerFactory.getLogger(ContactMailService.class);
 
     private final RestClient restClient;
     private final ContactMailProperties mailProps;
@@ -50,6 +54,9 @@ public class ContactMailService {
                     .retrieve()
                     .toBodilessEntity();
         } catch (Exception ex) {
+            log.error("Failed to send contact email via Resend. to={}, from={}, ip={}, userAgent={}",
+                    mailProps.to(), mailProps.from(), ip, userAgent, ex);
+
             throw new ApiException(500, ErrorCode.INTERNAL_ERROR, "Failed to send email");
         }
     }

@@ -8,10 +8,12 @@ import java.util.UUID;
 public class HomeWorkFieldItem {
 
     @Id
-    @Column(length = 120)
-    private String id;
-    @Column(name = "public_id", nullable = false, unique = true)
+    @Column(name = "public_id", nullable = false, updatable = false)
     private UUID publicId;
+
+    @Column(name = "slug", nullable = false, unique = true, length = 120)
+    private String slug;
+
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
@@ -31,16 +33,18 @@ public class HomeWorkFieldItem {
     private String descriptionDe;
     @Column(name = "description_uk", nullable = false)
     private String descriptionUk;
+
     @PrePersist
     public void prePersist() {
         if (publicId == null) publicId = UUID.randomUUID();
     }
 
-
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
     public UUID getPublicId() { return publicId; }
     public void setPublicId(UUID publicId) { this.publicId = publicId; }
+
+    public String getSlug() { return slug; }
+    public void setSlug(String slug) { this.slug = slug; }
+
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
 
@@ -60,4 +64,5 @@ public class HomeWorkFieldItem {
     public void setDescriptionDe(String descriptionDe) { this.descriptionDe = descriptionDe; }
     public String getDescriptionUk() { return descriptionUk; }
     public void setDescriptionUk(String descriptionUk) { this.descriptionUk = descriptionUk; }
+
 }

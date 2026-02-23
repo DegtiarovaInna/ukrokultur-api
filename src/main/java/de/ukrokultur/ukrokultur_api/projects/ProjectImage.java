@@ -21,17 +21,12 @@ public class ProjectImage {
     @Column(name="sort_order", nullable = false)
     private int sortOrder = 0;
 
-    @Column(name="is_cover", nullable = false)
-    private boolean cover = false;
-
     public Long getId() { return id; }
     public Project getProject() { return project; }
     public String getUrl() { return url; }
     public int getSortOrder() { return sortOrder; }
-    public boolean isCover() { return cover; }
 
     public void setProject(Project project) { this.project = project; }
     public void setUrl(String url) { this.url = url; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
-    public void setCover(boolean cover) { this.cover = cover; }
 }

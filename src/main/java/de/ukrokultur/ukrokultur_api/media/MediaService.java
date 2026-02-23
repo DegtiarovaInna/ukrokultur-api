@@ -3,6 +3,8 @@ package de.ukrokultur.ukrokultur_api.media;
 import de.ukrokultur.ukrokultur_api.common.dto.UploadResponseDto;
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import de.ukrokultur.ukrokultur_api.common.error.ErrorCode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -13,9 +15,13 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 public class MediaService {
+
+    private static final Logger log = LoggerFactory.getLogger(MediaService.class); // CHANGE: logging
 
     private final SupabaseProperties props;
     private final RestClient restClient;
@@ -45,6 +51,26 @@ public class MediaService {
         return new UploadResponseDto(objectPath, publicUrl);
     }
 
+    public List<UploadResponseDto> uploadMany(List<MultipartFile> files, String folder) {
+        ensureConfigured();
+
+        if (files == null || files.isEmpty()) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "files are required");
+        }
+
+        List<UploadResponseDto> out = new ArrayList<>();
+        for (MultipartFile f : files) {
+            if (f == null || f.isEmpty()) continue;
+            out.add(upload(f, folder));
+        }
+
+        if (out.isEmpty()) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "files are required");
+        }
+
+        return out;
+    }
+
     public void delete(String objectPath) {
         ensureConfigured();
 
@@ -61,7 +87,10 @@ public class MediaService {
                     .header("apikey", props.serviceRoleKey())
                     .retrieve()
                     .toBodilessEntity();
-        } catch (Exception e) {
+
+        } catch (Exception ex) {
+            log.error("Failed to delete file from Supabase Storage. objectPath={}", objectPath, ex);
+
             throw new ApiException(502, ErrorCode.INTERNAL_ERROR, "Failed to delete file from storage");
         }
     }
@@ -85,9 +114,16 @@ public class MediaService {
                     .retrieve()
                     .toBodilessEntity();
 
-        } catch (IOException e) {
+        } catch (IOException ex) {
+            log.error("Failed to read uploaded file. objectPath={}, originalFilename={}",
+                    objectPath, file == null ? null : file.getOriginalFilename(), ex);
+
             throw new ApiException(500, ErrorCode.INTERNAL_ERROR, "Failed to read uploaded file");
-        } catch (Exception e) {
+
+        } catch (Exception ex) {
+            log.error("Failed to upload file to Supabase Storage. objectPath={}, originalFilename={}",
+                    objectPath, file == null ? null : file.getOriginalFilename(), ex);
+
             throw new ApiException(502, ErrorCode.INTERNAL_ERROR, "Failed to upload file to storage");
         }
     }

@@ -44,7 +44,6 @@ public class AuthController {
                     new UsernamePasswordAuthenticationToken(req.email(), req.password())
             );
             Object principal = auth.getPrincipal();
-            System.out.println("AUTH OK, principal class = " + principal.getClass());
             String token = jwtService.generate((org.springframework.security.core.userdetails.UserDetails) auth.getPrincipal());
             return LoginResponseDto.bearer(token);
         } catch (AuthenticationException ex) {

@@ -31,8 +31,8 @@ public record HomeUpsertRequestDto(
     ) {}
 
     public record HomeWorkFieldItemUpsertDto(
-            @NotNull String slug,
-            @NotNull Integer order,
+            String id,
+            String slug,
             @NotNull Boolean published,
             @NotNull @Valid I18nText title,
             @NotNull @Valid I18nText description

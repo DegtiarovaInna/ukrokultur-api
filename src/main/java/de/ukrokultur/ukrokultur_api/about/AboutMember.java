@@ -20,7 +20,7 @@ public class AboutMember {
     private String image;
 
     @Column(name = "sort_order", nullable = false)
-    private int order;
+    private int sortOrder;
 
     @Column(nullable = false)
     private boolean published = true;
@@ -52,8 +52,8 @@ public class AboutMember {
     public String getImage() { return image; }
     public void setImage(String image) { this.image = image; }
 
-    public int getOrder() { return order; }
-    public void setOrder(int order) { this.order = order; }
+    public int getSortOrder() { return sortOrder; }
+    public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
 
     public boolean isPublished() { return published; }
     public void setPublished(boolean published) { this.published = published; }

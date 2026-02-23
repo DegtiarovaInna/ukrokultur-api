@@ -8,22 +8,29 @@ import de.ukrokultur.ukrokultur_api.common.dto.news.NewsVideoDto;
 import de.ukrokultur.ukrokultur_api.common.error.ErrorCode;
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import de.ukrokultur.ukrokultur_api.common.exception.NotFoundException;
+import de.ukrokultur.ukrokultur_api.common.slug.SlugGenerator;
+import de.ukrokultur.ukrokultur_api.media.MediaService;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+
 import java.time.ZoneOffset;
 import java.util.*;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 @Service
 @Transactional
 public class NewsService {
 
     private final NewsRepository newsRepository;
+    private final MediaService mediaService;
 
-    public NewsService(NewsRepository newsRepository) {
+    public NewsService(NewsRepository newsRepository, MediaService mediaService) {
         this.newsRepository = newsRepository;
+        this.mediaService = mediaService;
     }
 
     @Transactional(readOnly = true)
@@ -45,10 +52,33 @@ public class NewsService {
         );
     }
 
+    public NewsItemDto createMultipart(NewsUpsertRequestDto data, List<MultipartFile> images) {
+        NewsUpsertRequestDto req = withUploadedImages(data, images);
+        return create(req);
+    }
+
+    public NewsItemDto updateMultipart(UUID publicId, NewsUpsertRequestDto data, List<MultipartFile> images) {
+        NewsUpsertRequestDto req = withUploadedImages(data, images);
+        return update(publicId, req);
+    }
+
     public NewsItemDto create(NewsUpsertRequestDto req) {
         News n = new News();
 
         applyUpsert(n, req);
+
+        String requested = safeTrim(req.slug());
+        if (StringUtils.hasText(requested)) {
+            String normalized = SlugGenerator.slugify(requested);
+            if (!StringUtils.hasText(normalized)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug is invalid");
+            }
+            n.setSlug(normalized);
+        } else {
+            n.setSlug(null);
+        }
+
+        ensureSlug(n, req);
 
         if (StringUtils.hasText(n.getSlug()) && newsRepository.existsBySlug(n.getSlug())) {
             throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug already exists: " + n.getSlug());
@@ -61,22 +91,67 @@ public class NewsService {
         News n = newsRepository.findByPublicId(publicId)
                 .orElseThrow(() -> NotFoundException.of("News", publicId));
 
-        String newSlug = safeTrim(req.slug());
-        if (StringUtils.hasText(newSlug) && !Objects.equals(newSlug, n.getSlug())) {
-            if (newsRepository.existsBySlug(newSlug)) {
-                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug already exists: " + newSlug);
+        String requested = safeTrim(req.slug());
+        if (StringUtils.hasText(requested) && !Objects.equals(requested, n.getSlug())) {
+            String normalized = SlugGenerator.slugify(requested);
+            if (!StringUtils.hasText(normalized)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug is invalid");
             }
+            if (newsRepository.existsBySlug(normalized)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug already exists: " + normalized);
+            }
+            n.setSlug(normalized);
         }
-
 
         applyUpsert(n, req);
 
+        if (!StringUtils.hasText(n.getSlug())) {
+            ensureSlug(n, req);
+        }
+
         return toItemDto(n);
     }
+
+    private NewsUpsertRequestDto withUploadedImages(NewsUpsertRequestDto data, List<MultipartFile> images) {
+        List<String> urls = data.images();
+        if (images != null && !images.isEmpty()) {
+            urls = mediaService.uploadMany(images, "news").stream().map(x -> x.publicUrl()).toList();
+        }
+
+        return new NewsUpsertRequestDto(
+                data.slug(),
+                data.newsDate(),
+                data.eventDate(),
+                data.title(),
+                data.content(),
+                urls,
+                data.videos(),
+                data.published()
+        );
+    }
+
     private static String safeTrim(String s) {
         if (!StringUtils.hasText(s)) return null;
         return s.trim();
     }
+
+    private void ensureSlug(News n, NewsUpsertRequestDto req) {
+        if (StringUtils.hasText(n.getSlug())) return;
+
+        String base = firstNonBlank(req.title().de(), req.title().en(), req.title().uk());
+        Predicate<String> exists = newsRepository::existsBySlug;
+
+        n.setSlug(SlugGenerator.generateUnique(base, exists));
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) return "item";
+        for (String v : values) {
+            if (v != null && !v.isBlank()) return v;
+        }
+        return "item";
+    }
+
     public void delete(UUID publicId) {
         News n = newsRepository.findByPublicId(publicId)
                 .orElseThrow(() -> NotFoundException.of("News", publicId));
@@ -84,10 +159,8 @@ public class NewsService {
     }
 
     private void applyUpsert(News n, NewsUpsertRequestDto req) {
-        n.setSlug(safeTrim(req.slug()));
         n.setPublished(Boolean.TRUE.equals(req.published()));
         n.setEventDate(req.eventDate());
-
 
         n.setPublishedAt(req.newsDate().atStartOfDay().atOffset(ZoneOffset.UTC));
 
@@ -102,11 +175,9 @@ public class NewsService {
             n.setVideoLabel(null);
         }
 
-
         upsertTranslation(n, "en", req.title().en(), req.content().en());
         upsertTranslation(n, "de", req.title().de(), req.content().de());
         upsertTranslation(n, "uk", req.title().uk(), req.content().uk());
-
 
         n.clearImages();
         if (req.images() != null && !req.images().isEmpty()) {
@@ -123,7 +194,6 @@ public class NewsService {
     }
 
     private void upsertTranslation(News n, String lang, String title, String text) {
-
         NewsTranslation existing = null;
         for (NewsTranslation t : n.getTranslations()) {
             if (lang.equals(t.getLang())) {
@@ -133,19 +203,15 @@ public class NewsService {
         }
 
         if (existing == null) {
-
             NewsTranslation nt = new NewsTranslation();
             nt.setLang(lang);
             nt.setTitle(title);
             nt.setText(text);
             n.addTranslation(nt);
         } else {
-
             existing.setTitle(title);
             existing.setText(text);
         }
-
-
     }
 
     private NewsItemDto toItemDto(News n) {

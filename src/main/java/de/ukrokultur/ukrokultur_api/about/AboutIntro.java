@@ -14,6 +14,11 @@ public class AboutIntro {
     private String image;
 
     @Embedded
+    @AttributeOverrides({
+            @AttributeOverride(name = "en", column = @Column(name = "title_en", columnDefinition = "text", nullable = false)),
+            @AttributeOverride(name = "de", column = @Column(name = "title_de", columnDefinition = "text", nullable = false)),
+            @AttributeOverride(name = "uk", column = @Column(name = "title_uk", columnDefinition = "text", nullable = false))
+    })
     private I18nEmbeddable title;
 
     @Embedded

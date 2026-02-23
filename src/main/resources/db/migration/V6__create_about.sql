@@ -3,11 +3,9 @@ create table if not exists about_intro (
     id bigserial primary key,
     image text null,
 
-
-    en text not null,
-    de text not null,
-    uk text not null,
-
+    title_en text not null,
+    title_de text not null,
+    title_uk text not null,
 
     text_en text not null,
     text_de text not null,

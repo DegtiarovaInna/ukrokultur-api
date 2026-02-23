@@ -1,9 +1,10 @@
 package de.ukrokultur.ukrokultur_api.projects;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,7 +18,10 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     @Query("""
            select p from Project p
            where (:publishedOnly = false or p.published = true)
-           order by p.createdAt desc
+           order by p.sortOrder asc, p.createdAt desc
            """)
-    List<Project> findAllOrdered(boolean publishedOnly);
+    Page<Project> findPageOrdered(boolean publishedOnly, Pageable pageable);
+
+    @Query("select coalesce(max(p.sortOrder), -1) from Project p")
+    int findMaxSortOrder();
 }

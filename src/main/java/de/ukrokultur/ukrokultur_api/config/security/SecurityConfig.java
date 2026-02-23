@@ -45,7 +45,6 @@ public class SecurityConfig {
             HttpSecurity http,
             Environment env,
             JwtAuthenticationConverter jwtAuthenticationConverter
-
     ) throws Exception {
 
         boolean isDev = env.matchesProfiles("dev");
@@ -57,6 +56,10 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> {
             auth.requestMatchers("/news/**", "/contact/**", "/projects/**", "/home/**", "/about/**").permitAll();
             auth.requestMatchers("/auth/login").permitAll();
+
+            // Actuator: open only health (for deployment checks)
+            auth.requestMatchers("/actuator/health").permitAll();
+            // auth.requestMatchers("/actuator/info").permitAll();
 
             if (isDev) {
                 auth.requestMatchers(
@@ -73,6 +76,7 @@ public class SecurityConfig {
             }
 
             auth.requestMatchers("/admin/**").hasRole("ADMIN");
+
             auth.anyRequest().denyAll();
         });
 
@@ -89,7 +93,6 @@ public class SecurityConfig {
 
         return http.build();
     }
-
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter gac = new JwtGrantedAuthoritiesConverter();
