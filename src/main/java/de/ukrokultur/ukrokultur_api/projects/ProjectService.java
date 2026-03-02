@@ -49,13 +49,103 @@ public class ProjectService {
     }
 
     public ProjectItemDto createMultipart(ProjectUpsertRequestDto data, MultipartFile coverImage, List<MultipartFile> galleryImages) {
-        ProjectUpsertRequestDto req = withUploadedImages(data, coverImage, galleryImages);
-        return create(req);
+        String uploadedCover = null;
+        List<String> uploadedGallery = List.of();
+
+        try {
+            String coverUrl = data.coverImage();
+            if (coverImage != null && !coverImage.isEmpty()) {
+                uploadedCover = mediaService.upload(coverImage, "projects").publicUrl();
+                coverUrl = uploadedCover;
+            }
+
+            List<String> galleryUrls = data.galleryImages();
+            if (galleryImages != null && !galleryImages.isEmpty()) {
+                uploadedGallery = mediaService.uploadMany(galleryImages, "projects")
+                        .stream().map(x -> x.publicUrl()).toList();
+                galleryUrls = uploadedGallery;
+            }
+
+            ProjectUpsertRequestDto req = new ProjectUpsertRequestDto(
+                    data.slug(),
+                    data.title(),
+                    data.subtitle(),
+                    coverUrl,
+                    galleryUrls,
+                    data.startDate(),
+                    data.endDate(),
+                    data.description(),
+                    data.goals(),
+                    data.activities(),
+                    data.partners(),
+                    data.published(),
+                    data.order()
+            );
+
+            return create(req);
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploadedCover);
+            mediaService.deleteManyByPublicUrlsQuietly(uploadedGallery);
+            throw ex;
+        }
     }
 
     public ProjectItemDto updateMultipart(UUID id, ProjectUpsertRequestDto data, MultipartFile coverImage, List<MultipartFile> galleryImages) {
-        ProjectUpsertRequestDto req = withUploadedImages(data, coverImage, galleryImages);
-        return update(id, req);
+        Project existing = repo.findByPublicId(id).orElseThrow(() -> NotFoundException.of("Project", id));
+
+        String oldCover = existing.getCoverImage();
+        List<String> oldGallery = extractGalleryUrls(existing);
+
+        String uploadedCover = null;
+        List<String> uploadedGallery = List.of();
+
+        try {
+            String coverUrl = (data.coverImage() != null ? data.coverImage() : oldCover);
+            if (coverImage != null && !coverImage.isEmpty()) {
+                uploadedCover = mediaService.upload(coverImage, "projects").publicUrl();
+                coverUrl = uploadedCover;
+            }
+
+            List<String> galleryUrls = (data.galleryImages() != null ? data.galleryImages() : oldGallery);
+            if (galleryImages != null && !galleryImages.isEmpty()) {
+                uploadedGallery = mediaService.uploadMany(galleryImages, "projects")
+                        .stream().map(x -> x.publicUrl()).toList();
+                galleryUrls = uploadedGallery;
+            }
+
+            ProjectUpsertRequestDto req = new ProjectUpsertRequestDto(
+                    data.slug(),
+                    data.title(),
+                    data.subtitle(),
+                    coverUrl,
+                    galleryUrls,
+                    data.startDate(),
+                    data.endDate(),
+                    data.description(),
+                    data.goals(),
+                    data.activities(),
+                    data.partners(),
+                    data.published(),
+                    data.order()
+            );
+
+            ProjectItemDto out = update(id, req);
+
+            if (uploadedCover != null) {
+                mediaService.deleteByPublicUrlQuietly(oldCover);
+            }
+            if (uploadedGallery != null && !uploadedGallery.isEmpty()) {
+                mediaService.deleteManyByPublicUrlsQuietly(oldGallery);
+            }
+
+            return out;
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploadedCover);
+            mediaService.deleteManyByPublicUrlsQuietly(uploadedGallery);
+            throw ex;
+        }
     }
 
     public ProjectItemDto create(ProjectUpsertRequestDto req) {
@@ -117,38 +207,119 @@ public class ProjectService {
     public void delete(UUID publicId) {
         Project p = repo.findByPublicId(publicId)
                 .orElseThrow(() -> NotFoundException.of("Project", publicId));
+
+        String cover = p.getCoverImage();
+        List<String> gallery = extractGalleryUrls(p);
+
         repo.delete(p);
         compressOrder();
+
+        mediaService.deleteByPublicUrlQuietly(cover);
+        mediaService.deleteManyByPublicUrlsQuietly(gallery);
     }
 
-    private ProjectUpsertRequestDto withUploadedImages(ProjectUpsertRequestDto data, MultipartFile coverImage, List<MultipartFile> galleryImages) {
-        String coverUrl = data.coverImage();
-        if (coverImage != null && !coverImage.isEmpty()) {
-            coverUrl = mediaService.upload(coverImage, "projects").publicUrl();
+    public ProjectItemDto addGalleryImages(UUID publicId, List<MultipartFile> galleryImages) {
+        if (galleryImages == null || galleryImages.isEmpty()) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "galleryImages are required");
         }
 
-        List<String> galleryUrls = data.galleryImages();
-        if (galleryImages != null && !galleryImages.isEmpty()) {
-            galleryUrls = mediaService.uploadMany(galleryImages, "projects").stream()
-                    .map(x -> x.publicUrl())
-                    .toList();
+        List<String> uploaded = List.of();
+
+        try {
+            Project p = repo.findByPublicId(publicId)
+                    .orElseThrow(() -> NotFoundException.of("Project", publicId));
+
+            uploaded = mediaService.uploadMany(galleryImages, "projects")
+                    .stream().map(x -> x.publicUrl()).toList();
+
+            int startOrder = p.getImages().size();
+            for (String url : uploaded) {
+                ProjectImage img = new ProjectImage();
+                img.setUrl(url);
+                img.setSortOrder(startOrder++);
+                p.addImage(img);
+            }
+
+            normalizeProjectGallery(p);
+            return toDto(p);
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteManyByPublicUrlsQuietly(uploaded);
+            throw ex;
+        }
+    }
+
+    public ProjectItemDto deleteOneGalleryImage(UUID publicId, String url) {
+        if (!StringUtils.hasText(url)) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "url is required");
         }
 
-        return new ProjectUpsertRequestDto(
-                data.slug(),
-                data.title(),
-                data.subtitle(),
-                coverUrl,
-                galleryUrls,
-                data.startDate(),
-                data.endDate(),
-                data.description(),
-                data.goals(),
-                data.activities(),
-                data.partners(),
-                data.published(),
-                data.order()
-        );
+        Project p = repo.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("Project", publicId));
+
+        boolean removed = p.getImages().removeIf(img -> url.equals(img.getUrl()));
+        if (!removed) {
+            throw new ApiException(404, ErrorCode.NOT_FOUND, "Image not found in project gallery");
+        }
+
+        normalizeProjectGallery(p);
+
+        mediaService.deleteByPublicUrlQuietly(url);
+
+        return toDto(p);
+    }
+
+    public ProjectItemDto reorderGallery(UUID publicId, List<String> urls) {
+        if (urls == null || urls.isEmpty()) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "urls are required");
+        }
+
+        Project p = repo.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("Project", publicId));
+
+        Map<String, ProjectImage> byUrl = new LinkedHashMap<>();
+        for (ProjectImage img : p.getImages()) {
+            if (img != null && StringUtils.hasText(img.getUrl())) {
+                byUrl.put(img.getUrl(), img);
+            }
+        }
+
+        for (String u : urls) {
+            if (!byUrl.containsKey(u)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Unknown url in order list: " + u);
+            }
+        }
+        if (urls.size() != byUrl.size()) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Order list must contain all existing image urls");
+        }
+
+        List<ProjectImage> ordered = new ArrayList<>();
+        for (int i = 0; i < urls.size(); i++) {
+            ProjectImage img = byUrl.get(urls.get(i));
+            img.setSortOrder(i);
+            ordered.add(img);
+        }
+
+        p.getImages().clear();
+        for (ProjectImage img : ordered) {
+            p.addImage(img);
+        }
+
+        return toDto(p);
+    }
+
+    private List<String> extractGalleryUrls(Project p) {
+        return p.getImages().stream()
+                .map(ProjectImage::getUrl)
+                .filter(StringUtils::hasText)
+                .toList();
+    }
+
+    private void normalizeProjectGallery(Project p) {
+        p.getImages().sort(Comparator.comparingInt(ProjectImage::getSortOrder));
+        for (int i = 0; i < p.getImages().size(); i++) {
+            p.getImages().get(i).setSortOrder(i);
+        }
     }
 
     private void moveProject(Project target, int newIndex) {

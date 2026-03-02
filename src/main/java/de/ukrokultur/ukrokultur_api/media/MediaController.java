@@ -1,6 +1,6 @@
 package de.ukrokultur.ukrokultur_api.media;
 
-import de.ukrokultur.ukrokultur_api.common.dto.UploadResponseDto;
+import de.ukrokultur.ukrokultur_api.common.dto.media.UploadResponseDto;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;

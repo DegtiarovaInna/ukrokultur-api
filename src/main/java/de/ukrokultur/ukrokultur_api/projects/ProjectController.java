@@ -1,8 +1,11 @@
 package de.ukrokultur.ukrokultur_api.projects;
 
+import de.ukrokultur.ukrokultur_api.common.dto.media.OrderUrlsRequestDto;
+import de.ukrokultur.ukrokultur_api.common.dto.media.UrlRequestDto;
 import de.ukrokultur.ukrokultur_api.common.dto.projects.ProjectItemDto;
 import de.ukrokultur.ukrokultur_api.common.dto.projects.ProjectPageResultDto;
 import de.ukrokultur.ukrokultur_api.common.dto.projects.ProjectUpsertRequestDto;
+import de.ukrokultur.ukrokultur_api.common.web.MultipartJsonReader;
 import de.ukrokultur.ukrokultur_api.config.OpenApiConfig;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -20,12 +23,14 @@ import java.util.UUID;
 public class ProjectController {
 
     private final ProjectService service;
+    private final MultipartJsonReader jsonReader;
 
-    public ProjectController(ProjectService service) {
+    public ProjectController(ProjectService service, MultipartJsonReader jsonReader) {
         this.service = service;
+        this.jsonReader = jsonReader;
     }
 
-    @Operation(summary = "Get projects page", description = "Returns projects with pagination.")
+    @Operation(summary = "Get projects page")
     @GetMapping("/projects")
     public ProjectPageResultDto getPage(
             @RequestParam(defaultValue = "1") int page,
@@ -43,13 +48,14 @@ public class ProjectController {
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @Operation(summary = "Create project (multipart)", description = "One request: data + coverImage + galleryImages")
-    @PostMapping(value = "/admin/projects", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Create project (multipart)")
+    @PostMapping(value = "/admin/projects/multipart", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ProjectItemDto createMultipart(
-            @RequestPart("data") @Valid ProjectUpsertRequestDto data,
+            @RequestPart("data") String dataJson,
             @RequestPart(value = "coverImage", required = false) MultipartFile coverImage,
             @RequestPart(value = "galleryImages", required = false) List<MultipartFile> galleryImages
     ) {
+        ProjectUpsertRequestDto data = jsonReader.read(dataJson, ProjectUpsertRequestDto.class);
         return service.createMultipart(data, coverImage, galleryImages);
     }
 
@@ -61,14 +67,15 @@ public class ProjectController {
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @Operation(summary = "Update project (multipart)", description = "One request: data + coverImage + galleryImages")
-    @PutMapping(value = "/admin/projects/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Update project (multipart)")
+    @PutMapping(value = "/admin/projects/{id}/multipart", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ProjectItemDto updateMultipart(
             @PathVariable UUID id,
-            @RequestPart("data") @Valid ProjectUpsertRequestDto data,
+            @RequestPart("data") String dataJson,
             @RequestPart(value = "coverImage", required = false) MultipartFile coverImage,
             @RequestPart(value = "galleryImages", required = false) List<MultipartFile> galleryImages
     ) {
+        ProjectUpsertRequestDto data = jsonReader.read(dataJson, ProjectUpsertRequestDto.class);
         return service.updateMultipart(id, data, coverImage, galleryImages);
     }
 
@@ -77,5 +84,34 @@ public class ProjectController {
     @DeleteMapping("/admin/projects/{id}")
     public void delete(@PathVariable UUID id) {
         service.delete(id);
+    }
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
+    @Operation(summary = "Add images to project gallery (multipart)")
+    @PostMapping(value = "/admin/projects/{id}/gallery", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ProjectItemDto addGalleryImages(
+            @PathVariable UUID id,
+            @RequestPart("galleryImages") List<MultipartFile> galleryImages
+    ) {
+        return service.addGalleryImages(id, galleryImages);
+    }
+
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
+    @Operation(summary = "Delete one image from project gallery by url")
+    @DeleteMapping(value = "/admin/projects/{id}/gallery", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ProjectItemDto deleteOneGalleryImage(
+            @PathVariable UUID id,
+            @RequestBody @Valid UrlRequestDto req
+    ) {
+        return service.deleteOneGalleryImage(id, req.url());
+    }
+
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
+    @Operation(summary = "Reorder project gallery images")
+    @PatchMapping(value = "/admin/projects/{id}/gallery/order", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ProjectItemDto reorderGallery(
+            @PathVariable UUID id,
+            @RequestBody @Valid OrderUrlsRequestDto req
+    ) {
+        return service.reorderGallery(id, req.urls());
     }
 }

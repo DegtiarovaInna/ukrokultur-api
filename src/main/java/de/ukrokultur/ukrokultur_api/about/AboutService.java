@@ -10,6 +10,7 @@ import de.ukrokultur.ukrokultur_api.media.MediaService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.util.UUID;
 import java.util.List;
 
@@ -61,19 +62,38 @@ public class AboutService {
     }
 
     public AboutIntroDto updateIntroMultipart(AboutIntroUpsertRequestDto data, MultipartFile image) {
-        String imageUrl = data.image();
-        if (image != null && !image.isEmpty()) {
-            imageUrl = mediaService.upload(image, "about").publicUrl();
+        AboutIntro intro = getOrCreateIntro();
+        String old = intro.getImage();
+
+        String uploaded = null;
+
+        try {
+            String imageUrl = (data.image() != null ? data.image() : old);
+
+            if (image != null && !image.isEmpty()) {
+                uploaded = mediaService.upload(image, "about").publicUrl();
+                imageUrl = uploaded;
+            }
+
+            AboutIntroUpsertRequestDto req = new AboutIntroUpsertRequestDto(
+                    imageUrl,
+                    data.title(),
+                    data.text(),
+                    data.published()
+            );
+
+            AboutIntroDto out = updateIntro(req);
+
+            if (uploaded != null) {
+                mediaService.deleteByPublicUrlQuietly(old);
+            }
+
+            return out;
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploaded);
+            throw ex;
         }
-
-        AboutIntroUpsertRequestDto req = new AboutIntroUpsertRequestDto(
-                imageUrl,
-                data.title(),
-                data.text(),
-                data.published()
-        );
-
-        return updateIntro(req);
     }
 
     @Transactional(readOnly = true)
@@ -96,25 +116,33 @@ public class AboutService {
         return toMemberDto(saved);
     }
 
-
     public AboutMemberDto createMemberMultipart(AboutMemberUpsertRequestDto data, MultipartFile image) {
-        String imageUrl = data.image();
-        if (image != null && !image.isEmpty()) {
-            imageUrl = mediaService.upload(image, "about").publicUrl();
+        String uploaded = null;
+
+        try {
+            String imageUrl = data.image();
+            if (image != null && !image.isEmpty()) {
+                uploaded = mediaService.upload(image, "about").publicUrl();
+                imageUrl = uploaded;
+            }
+
+            AboutMemberUpsertRequestDto req = new AboutMemberUpsertRequestDto(
+                    data.slug(),
+                    data.name(),
+                    imageUrl,
+                    data.order(),
+                    data.published(),
+                    data.instagramUrl(),
+                    data.role(),
+                    data.biography()
+            );
+
+            return createMember(req);
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploaded);
+            throw ex;
         }
-
-        AboutMemberUpsertRequestDto req = new AboutMemberUpsertRequestDto(
-                data.slug(),
-                data.name(),
-                imageUrl,
-                data.order(),
-                data.published(),
-                data.instagramUrl(),
-                data.role(),
-                data.biography()
-        );
-
-        return createMember(req);
     }
 
     public AboutMemberDto updateMember(UUID id, AboutMemberUpsertRequestDto req) {
@@ -145,31 +173,55 @@ public class AboutService {
     }
 
     public AboutMemberDto updateMemberMultipart(UUID id, AboutMemberUpsertRequestDto data, MultipartFile image) {
-        String imageUrl = data.image();
-        if (image != null && !image.isEmpty()) {
-            imageUrl = mediaService.upload(image, "about").publicUrl();
+        AboutMember existing = memberRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.of("AboutMember", id));
+
+        String old = existing.getImage();
+        String uploaded = null;
+
+        try {
+            String imageUrl = (data.image() != null ? data.image() : old);
+
+            if (image != null && !image.isEmpty()) {
+                uploaded = mediaService.upload(image, "about").publicUrl();
+                imageUrl = uploaded;
+            }
+
+            AboutMemberUpsertRequestDto req = new AboutMemberUpsertRequestDto(
+                    data.slug(),
+                    data.name(),
+                    imageUrl,
+                    data.order(),
+                    data.published(),
+                    data.instagramUrl(),
+                    data.role(),
+                    data.biography()
+            );
+
+            AboutMemberDto out = updateMember(id, req);
+
+            if (uploaded != null) {
+                mediaService.deleteByPublicUrlQuietly(old);
+            }
+
+            return out;
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploaded);
+            throw ex;
         }
-
-        AboutMemberUpsertRequestDto req = new AboutMemberUpsertRequestDto(
-                data.slug(),
-                data.name(),
-                imageUrl,
-                data.order(),
-                data.published(),
-                data.instagramUrl(),
-                data.role(),
-                data.biography()
-        );
-
-        return updateMember(id, req);
     }
 
     public void deleteMember(UUID id) {
         AboutMember m = memberRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.of("AboutMember", id));
 
+        String old = m.getImage();
+
         memberRepository.delete(m);
         compressMemberOrder();
+
+        mediaService.deleteByPublicUrlQuietly(old);
     }
 
     private String resolveUniqueSlug(String requested, String nameBase) {
@@ -188,7 +240,6 @@ public class AboutService {
 
     private void moveMember(AboutMember target, int newIndex) {
         List<AboutMember> ordered = memberRepository.findAllOrdered();
-
         ordered.removeIf(x -> x.getId().equals(target.getId()));
 
         int idx = Math.max(0, Math.min(newIndex, ordered.size()));

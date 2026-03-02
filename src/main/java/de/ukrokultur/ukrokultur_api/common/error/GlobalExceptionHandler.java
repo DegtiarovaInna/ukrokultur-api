@@ -4,12 +4,16 @@ import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -71,7 +75,35 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(403).body(body);
     }
+    @ExceptionHandler({
+            HttpMessageNotReadableException.class,
+            MissingServletRequestPartException.class,
+            MultipartException.class
+    })
+    public ResponseEntity<ApiError> handleBadRequest(Exception ex, HttpServletRequest req) {
+        ApiError body = ApiError.of(
+                400,
+                "Bad Request",
+                ErrorCode.VALIDATION_ERROR,
+                ex.getMessage(),
+                req.getRequestURI(),
+                null
+        );
+        return ResponseEntity.badRequest().body(body);
+    }
 
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiError> handleUnsupportedMedia(HttpMediaTypeNotSupportedException ex, HttpServletRequest req) {
+        ApiError body = ApiError.of(
+                415,
+                "Unsupported Media Type",
+                ErrorCode.VALIDATION_ERROR,
+                ex.getMessage(),
+                req.getRequestURI(),
+                null
+        );
+        return ResponseEntity.status(415).body(body);
+    }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleGeneric(Exception ex, HttpServletRequest req) {
         ApiError body = ApiError.of(

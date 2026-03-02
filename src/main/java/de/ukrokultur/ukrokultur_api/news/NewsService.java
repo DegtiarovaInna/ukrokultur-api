@@ -52,14 +52,84 @@ public class NewsService {
         );
     }
 
+
     public NewsItemDto createMultipart(NewsUpsertRequestDto data, List<MultipartFile> images) {
-        NewsUpsertRequestDto req = withUploadedImages(data, images);
-        return create(req);
+        List<String> uploaded = List.of();
+
+        try {
+            List<String> urls = data.images();
+
+            if (images != null && !images.isEmpty()) {
+                uploaded = mediaService.uploadMany(images, "news")
+                        .stream().map(x -> x.publicUrl()).toList();
+                urls = uploaded;
+            }
+
+            NewsUpsertRequestDto req = new NewsUpsertRequestDto(
+                    data.slug(),
+                    data.newsDate(),
+                    data.eventDate(),
+                    data.title(),
+                    data.content(),
+                    urls,
+                    data.videos(),
+                    data.published()
+            );
+
+            return create(req);
+
+        } catch (RuntimeException ex) {
+
+            mediaService.deleteManyByPublicUrlsQuietly(uploaded);
+            throw ex;
+        }
     }
 
+
     public NewsItemDto updateMultipart(UUID publicId, NewsUpsertRequestDto data, List<MultipartFile> images) {
-        NewsUpsertRequestDto req = withUploadedImages(data, images);
-        return update(publicId, req);
+        News existing = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
+
+        List<String> oldUrls = extractImageUrls(existing);
+
+        List<String> uploaded = List.of();
+
+        try {
+
+            List<String> urls = (data.images() != null ? data.images() : oldUrls);
+
+
+            if (images != null && !images.isEmpty()) {
+                uploaded = mediaService.uploadMany(images, "news")
+                        .stream().map(x -> x.publicUrl()).toList();
+                urls = uploaded;
+            }
+
+            NewsUpsertRequestDto req = new NewsUpsertRequestDto(
+                    data.slug(),
+                    data.newsDate(),
+                    data.eventDate(),
+                    data.title(),
+                    data.content(),
+                    urls,
+                    data.videos(),
+                    data.published()
+            );
+
+            NewsItemDto out = update(publicId, req);
+
+
+            if (uploaded != null && !uploaded.isEmpty()) {
+                mediaService.deleteManyByPublicUrlsQuietly(oldUrls);
+            }
+
+            return out;
+
+        } catch (RuntimeException ex) {
+
+            mediaService.deleteManyByPublicUrlsQuietly(uploaded);
+            throw ex;
+        }
     }
 
     public NewsItemDto create(NewsUpsertRequestDto req) {
@@ -112,22 +182,128 @@ public class NewsService {
         return toItemDto(n);
     }
 
-    private NewsUpsertRequestDto withUploadedImages(NewsUpsertRequestDto data, List<MultipartFile> images) {
-        List<String> urls = data.images();
-        if (images != null && !images.isEmpty()) {
-            urls = mediaService.uploadMany(images, "news").stream().map(x -> x.publicUrl()).toList();
+    public void delete(UUID publicId) {
+        News n = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
+
+        List<String> urls = extractImageUrls(n);
+
+        newsRepository.delete(n);
+
+        mediaService.deleteManyByPublicUrlsQuietly(urls);
+    }
+
+
+    public NewsItemDto addImages(UUID publicId, List<MultipartFile> images) {
+        if (images == null || images.isEmpty()) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "images are required");
         }
 
-        return new NewsUpsertRequestDto(
-                data.slug(),
-                data.newsDate(),
-                data.eventDate(),
-                data.title(),
-                data.content(),
-                urls,
-                data.videos(),
-                data.published()
-        );
+        List<String> uploaded = List.of();
+
+        try {
+            News n = newsRepository.findByPublicId(publicId)
+                    .orElseThrow(() -> NotFoundException.of("News", publicId));
+
+            uploaded = mediaService.uploadMany(images, "news")
+                    .stream().map(x -> x.publicUrl()).toList();
+
+            int startOrder = n.getImages().size();
+
+            for (String url : uploaded) {
+                NewsImage img = new NewsImage();
+                img.setUrl(url);
+                img.setSortOrder(startOrder++);
+                img.setCover(false);
+                n.addImage(img);
+            }
+
+            normalizeNewsImages(n);
+            return toItemDto(n);
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteManyByPublicUrlsQuietly(uploaded);
+            throw ex;
+        }
+    }
+
+    public NewsItemDto deleteOneImage(UUID publicId, String url) {
+        if (!StringUtils.hasText(url)) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "url is required");
+        }
+
+        News n = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
+
+        boolean removed = n.getImages().removeIf(img -> url.equals(img.getUrl()));
+        if (!removed) {
+            throw new ApiException(404, ErrorCode.NOT_FOUND, "Image not found in news gallery");
+        }
+
+        normalizeNewsImages(n);
+
+        mediaService.deleteByPublicUrlQuietly(url);
+
+        return toItemDto(n);
+    }
+
+    public NewsItemDto reorderImages(UUID publicId, List<String> urls) {
+        if (urls == null || urls.isEmpty()) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "urls are required");
+        }
+
+        News n = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
+
+        Map<String, NewsImage> byUrl = new LinkedHashMap<>();
+        for (NewsImage img : n.getImages()) {
+            if (img != null && StringUtils.hasText(img.getUrl())) {
+                byUrl.put(img.getUrl(), img);
+            }
+        }
+
+        for (String u : urls) {
+            if (!byUrl.containsKey(u)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Unknown url in order list: " + u);
+            }
+        }
+        if (urls.size() != byUrl.size()) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Order list must contain all existing image urls");
+        }
+
+        List<NewsImage> ordered = new ArrayList<>();
+        for (int i = 0; i < urls.size(); i++) {
+            NewsImage img = byUrl.get(urls.get(i));
+            img.setSortOrder(i);
+            img.setCover(i == 0);
+            ordered.add(img);
+        }
+
+        n.getImages().clear();
+        for (NewsImage img : ordered) {
+            n.addImage(img);
+        }
+
+        return toItemDto(n);
+    }
+
+    private void normalizeNewsImages(News n) {
+        n.getImages().sort(Comparator.comparingInt(NewsImage::getSortOrder));
+        for (int i = 0; i < n.getImages().size(); i++) {
+            NewsImage img = n.getImages().get(i);
+            img.setSortOrder(i);
+            img.setCover(i == 0);
+        }
+    }
+
+    private List<String> extractImageUrls(News n) {
+        List<String> urls = new ArrayList<>();
+        for (NewsImage img : n.getImages()) {
+            if (img != null && StringUtils.hasText(img.getUrl())) {
+                urls.add(img.getUrl());
+            }
+        }
+        return urls;
     }
 
     private static String safeTrim(String s) {
@@ -150,12 +326,6 @@ public class NewsService {
             if (v != null && !v.isBlank()) return v;
         }
         return "item";
-    }
-
-    public void delete(UUID publicId) {
-        News n = newsRepository.findByPublicId(publicId)
-                .orElseThrow(() -> NotFoundException.of("News", publicId));
-        newsRepository.delete(n);
     }
 
     private void applyUpsert(News n, NewsUpsertRequestDto req) {
@@ -183,6 +353,7 @@ public class NewsService {
         if (req.images() != null && !req.images().isEmpty()) {
             int order = 0;
             for (String url : req.images()) {
+                if (!StringUtils.hasText(url)) continue;
                 NewsImage img = new NewsImage();
                 img.setUrl(url);
                 img.setSortOrder(order);

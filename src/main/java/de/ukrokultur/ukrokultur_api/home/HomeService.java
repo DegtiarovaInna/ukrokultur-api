@@ -103,38 +103,59 @@ public class HomeService {
         return getAdmin();
     }
 
-
     public HomeResponseDto upsertMultipart(HomeUpsertRequestDto data, MultipartFile heroImage, MultipartFile missionImage) {
-        HomeUpsertRequestDto.HomeHeroUpsertDto hero = data.hero();
-        HomeUpsertRequestDto.HomeMissionUpsertDto mission = data.mission();
+        HomePage page = getOrCreate();
 
-        String heroUrl = hero.image();
-        if (heroImage != null && !heroImage.isEmpty()) {
-            heroUrl = mediaService.upload(heroImage, "home").publicUrl();
+        String oldHero = page.getHeroImage();
+        String oldMission = page.getMissionImage();
+
+        String uploadedHero = null;
+        String uploadedMission = null;
+
+        try {
+            HomeUpsertRequestDto.HomeHeroUpsertDto hero = data.hero();
+            HomeUpsertRequestDto.HomeMissionUpsertDto mission = data.mission();
+
+            String heroUrl = (hero.image() != null ? hero.image() : oldHero);
+            if (heroImage != null && !heroImage.isEmpty()) {
+                uploadedHero = mediaService.upload(heroImage, "home").publicUrl();
+                heroUrl = uploadedHero;
+            }
+
+            String missionUrl = (mission.image() != null ? mission.image() : oldMission);
+            if (missionImage != null && !missionImage.isEmpty()) {
+                uploadedMission = mediaService.upload(missionImage, "home").publicUrl();
+                missionUrl = uploadedMission;
+            }
+
+            HomeUpsertRequestDto req = new HomeUpsertRequestDto(
+                    new HomeUpsertRequestDto.HomeHeroUpsertDto(
+                            heroUrl,
+                            hero.title(),
+                            hero.subtitle(),
+                            hero.published()
+                    ),
+                    new HomeUpsertRequestDto.HomeMissionUpsertDto(
+                            missionUrl,
+                            mission.title(),
+                            mission.text(),
+                            mission.published()
+                    ),
+                    data.workFields()
+            );
+
+            HomeResponseDto out = upsert(req);
+
+            if (uploadedHero != null) mediaService.deleteByPublicUrlQuietly(oldHero);
+            if (uploadedMission != null) mediaService.deleteByPublicUrlQuietly(oldMission);
+
+            return out;
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploadedHero);
+            mediaService.deleteByPublicUrlQuietly(uploadedMission);
+            throw ex;
         }
-
-        String missionUrl = mission.image();
-        if (missionImage != null && !missionImage.isEmpty()) {
-            missionUrl = mediaService.upload(missionImage, "home").publicUrl();
-        }
-
-        HomeUpsertRequestDto req = new HomeUpsertRequestDto(
-                new HomeUpsertRequestDto.HomeHeroUpsertDto(
-                        heroUrl,
-                        hero.title(),
-                        hero.subtitle(),
-                        hero.published()
-                ),
-                new HomeUpsertRequestDto.HomeMissionUpsertDto(
-                        missionUrl,
-                        mission.title(),
-                        mission.text(),
-                        mission.published()
-                ),
-                data.workFields()
-        );
-
-        return upsert(req);
     }
 
     private void applyWorkField(HomeWorkFieldItem e, HomeUpsertRequestDto.HomeWorkFieldItemUpsertDto it, int sortOrder) {

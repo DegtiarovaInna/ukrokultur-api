@@ -1,6 +1,6 @@
 package de.ukrokultur.ukrokultur_api.media;
 
-import de.ukrokultur.ukrokultur_api.common.dto.UploadResponseDto;
+import de.ukrokultur.ukrokultur_api.common.dto.media.UploadResponseDto;
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import de.ukrokultur.ukrokultur_api.common.error.ErrorCode;
 import org.slf4j.Logger;
@@ -12,16 +12,19 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 @Service
 public class MediaService {
 
-    private static final Logger log = LoggerFactory.getLogger(MediaService.class); // CHANGE: logging
+    private static final Logger log = LoggerFactory.getLogger(MediaService.class);
 
     private final SupabaseProperties props;
     private final RestClient restClient;
@@ -90,9 +93,104 @@ public class MediaService {
 
         } catch (Exception ex) {
             log.error("Failed to delete file from Supabase Storage. objectPath={}", objectPath, ex);
-
             throw new ApiException(502, ErrorCode.INTERNAL_ERROR, "Failed to delete file from storage");
         }
+    }
+
+    public void deleteQuietly(String objectPath) {
+        if (!StringUtils.hasText(objectPath)) return;
+        try {
+            delete(objectPath);
+        } catch (Exception ex) {
+            log.warn("Storage delete failed (ignored). objectPath={}", objectPath, ex);
+        }
+    }
+
+    public void deleteByPublicUrlQuietly(String publicUrl) {
+        String objectPath = extractObjectPathFromPublicUrl(publicUrl);
+        if (!StringUtils.hasText(objectPath)) return;
+        deleteQuietly(objectPath);
+    }
+
+    public void deleteManyByPublicUrlsQuietly(Collection<String> publicUrls) {
+        if (publicUrls == null || publicUrls.isEmpty()) return;
+        for (String url : publicUrls) {
+            deleteByPublicUrlQuietly(url);
+        }
+    }
+
+    public boolean isManagedPublicUrl(String publicUrl) {
+        return StringUtils.hasText(extractObjectPathFromPublicUrl(publicUrl));
+    }
+
+    public String extractObjectPathFromPublicUrl(String publicUrl) {
+        if (!StringUtils.hasText(publicUrl)) return null;
+        ensureConfigured();
+
+        String url = publicUrl.trim();
+
+
+        if (StringUtils.hasText(props.publicBaseUrl())) {
+            String base = props.publicBaseUrl().trim();
+            if (url.startsWith(base)) {
+                String tail = url.substring(base.length());
+                if (tail.startsWith("/")) tail = tail.substring(1);
+                tail = stripQuery(tail);
+                tail = tail.isBlank() ? null : decodePath(tail);   // <-- FIX
+                return tail;
+            }
+        }
+
+
+        String prefix = props.url().trim() + "/storage/v1/object/public/" + props.bucket() + "/";
+        if (url.startsWith(prefix)) {
+            String tail = url.substring(prefix.length());
+            tail = stripQuery(tail);
+            tail = tail.isBlank() ? null : decodePath(tail);
+            return tail;
+        }
+
+
+        try {
+            URI uri = URI.create(url);
+            String noQuery = uri.toString().split("\\?")[0];
+
+            if (StringUtils.hasText(props.publicBaseUrl())) {
+                String base = props.publicBaseUrl().trim();
+                if (noQuery.startsWith(base)) {
+                    String tail = noQuery.substring(base.length());
+                    if (tail.startsWith("/")) tail = tail.substring(1);
+                    tail = tail.isBlank() ? null : decodePath(tail);
+                    return tail;
+                }
+            }
+
+            if (noQuery.startsWith(prefix)) {
+                String tail = noQuery.substring(prefix.length());
+                tail = tail.isBlank() ? null : decodePath(tail);
+                return tail;
+            }
+        } catch (Exception ignore) {}
+
+        return null;
+    }
+    private static String stripQuery(String s) {
+        if (s == null) return null;
+        int idx = s.indexOf('?');
+        return idx >= 0 ? s.substring(0, idx) : s;
+    }
+
+
+    private static String decodePath(String encodedPath) {
+        if (!StringUtils.hasText(encodedPath)) return null;
+
+        String[] parts = encodedPath.split("/");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) sb.append("/");
+            sb.append(URLDecoder.decode(parts[i], StandardCharsets.UTF_8));
+        }
+        return sb.toString();
     }
 
     private void putToStorage(String objectPath, MultipartFile file) {

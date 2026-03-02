@@ -1,4 +1,4 @@
-package de.ukrokultur.ukrokultur_api.common.dto;
+package de.ukrokultur.ukrokultur_api.common.dto.media;
 
 import jakarta.validation.constraints.NotBlank;
 
