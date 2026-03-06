@@ -32,6 +32,7 @@ public record HomeResponseDto(
 
     public record HomeWorkFieldItemDto(
             String id,
+            String slug,
             int order,
             boolean published,
             I18nText title,

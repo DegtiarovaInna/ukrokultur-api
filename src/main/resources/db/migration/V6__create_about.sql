@@ -1,12 +1,11 @@
+create extension if not exists pgcrypto;
 create table if not exists about_intro (
     id bigserial primary key,
     image text null,
 
-
-    en text not null,
-    de text not null,
-    uk text not null,
-
+    title_en text not null,
+    title_de text not null,
+    title_uk text not null,
 
     text_en text not null,
     text_de text not null,
@@ -17,7 +16,8 @@ create table if not exists about_intro (
 );
 
 create table if not exists about_member (
-    id varchar(120) primary key,
+    id uuid primary key default gen_random_uuid(),
+    slug varchar(120) not null unique,
     name varchar(200) not null,
     image text null,
     sort_order int not null default 0,
@@ -32,5 +32,5 @@ create table if not exists about_member (
     biography_de text not null,
     biography_uk text not null
 );
-
 create index if not exists idx_about_member_sort on about_member(sort_order);
+create index if not exists idx_about_member_slug on about_member(slug);

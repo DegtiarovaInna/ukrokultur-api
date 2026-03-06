@@ -9,6 +9,7 @@ import java.util.List;
 
 public record NewsItemDto(
         String id,
+        String slug,
         LocalDate newsDate,
         LocalDate eventDate,
         I18nText title,

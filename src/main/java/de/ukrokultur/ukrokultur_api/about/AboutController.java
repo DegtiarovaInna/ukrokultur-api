@@ -1,135 +1,110 @@
 package de.ukrokultur.ukrokultur_api.about;
 
 import de.ukrokultur.ukrokultur_api.common.dto.about.*;
-import de.ukrokultur.ukrokultur_api.common.error.ApiError;
+import de.ukrokultur.ukrokultur_api.common.web.MultipartJsonReader;
 import de.ukrokultur.ukrokultur_api.config.OpenApiConfig;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.*;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.UUID;
 
-@Tag(name = "About")
+@Tag(name = "About", description = "Public about page and admin CRUD for intro/members.")
 @RestController
-@RequestMapping({"/about", "/admin/about"})
 public class AboutController {
 
     private final AboutService aboutService;
+    private final MultipartJsonReader jsonReader;
 
-    public AboutController(AboutService aboutService) {
+    public AboutController(AboutService aboutService, MultipartJsonReader jsonReader) {
         this.aboutService = aboutService;
+        this.jsonReader = jsonReader;
     }
 
-
-    // Public
-
     @Operation(summary = "Get about (public)")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK")
-    })
-    @GetMapping
+    @GetMapping("/about")
     public AboutResponseDto getPublic() {
         return aboutService.getPublic();
     }
 
-
-    // Admin
-
-
-
-    @Operation(summary = "Get about intro (admin)")
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "403", description = "Forbidden",
-                    content = @Content(schema = @Schema(implementation = ApiError.class)))
-    })
-    @GetMapping("/intro")
+    @Operation(summary = "Get about intro (admin)")
+    @GetMapping("/admin/about/intro")
     public AboutIntroDto getIntroAdmin() {
         return aboutService.getIntroAdmin();
     }
 
-    @Operation(summary = "Update about intro (admin)")
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK"),
-            @ApiResponse(responseCode = "400", description = "Validation error",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "401", description = "Unauthorized",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "403", description = "Forbidden",
-                    content = @Content(schema = @Schema(implementation = ApiError.class)))
-    })
-    @PutMapping("/intro")
+    @Operation(summary = "Update about intro (admin) - JSON")
+    @PutMapping(value = "/admin/about/intro", consumes = MediaType.APPLICATION_JSON_VALUE)
     public AboutIntroDto updateIntro(@Valid @RequestBody AboutIntroUpsertRequestDto req) {
         return aboutService.updateIntro(req);
     }
 
-    @Operation(summary = "List members (admin)")
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "403", description = "Forbidden",
-                    content = @Content(schema = @Schema(implementation = ApiError.class)))
-    })
-    @GetMapping("/members")
+    @Operation(summary = "Update about intro (admin) - multipart")
+    @PutMapping(value = "/admin/about/intro/multipart", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public AboutIntroDto updateIntroMultipart(
+            @RequestPart("data") String dataJson,
+            @RequestPart(value = "image", required = false) MultipartFile image
+    ) {
+        AboutIntroUpsertRequestDto data = jsonReader.read(dataJson, AboutIntroUpsertRequestDto.class);
+        return aboutService.updateIntroMultipart(data, image);
+    }
+
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
+    @Operation(summary = "List members (admin)")
+    @GetMapping("/admin/about/members")
     public List<AboutMemberDto> listMembersAdmin() {
         return aboutService.getMembersAdmin();
     }
 
-    @Operation(summary = "Create member (admin)")
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK"),
-            @ApiResponse(responseCode = "400", description = "Validation error",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "401", description = "Unauthorized",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "403", description = "Forbidden",
-                    content = @Content(schema = @Schema(implementation = ApiError.class)))
-    })
-    @PostMapping("/members")
+    @Operation(summary = "Create member (admin) - JSON")
+    @PostMapping(value = "/admin/about/members", consumes = MediaType.APPLICATION_JSON_VALUE)
     public AboutMemberDto createMember(@Valid @RequestBody AboutMemberUpsertRequestDto req) {
         return aboutService.createMember(req);
     }
 
-    @Operation(summary = "Update member (admin)")
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK"),
-            @ApiResponse(responseCode = "400", description = "Validation error",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "401", description = "Unauthorized",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "403", description = "Forbidden",
-                    content = @Content(schema = @Schema(implementation = ApiError.class)))
-    })
-    @PutMapping("/members/{id}")
-    public AboutMemberDto updateMember(@PathVariable String id,
-                                       @Valid @RequestBody AboutMemberUpsertRequestDto req) {
+    @Operation(summary = "Create member (admin) - multipart")
+    @PostMapping(value = "/admin/about/members/multipart", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public AboutMemberDto createMemberMultipart(
+            @RequestPart("data") String dataJson,
+            @RequestPart(value = "image", required = false) MultipartFile image
+    ) {
+        AboutMemberUpsertRequestDto data = jsonReader.read(dataJson, AboutMemberUpsertRequestDto.class);
+        return aboutService.createMemberMultipart(data, image);
+    }
+
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
+    @Operation(summary = "Update member (admin) - JSON")
+    @PutMapping(value = "/admin/about/members/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public AboutMemberDto updateMember(@PathVariable UUID id, @Valid @RequestBody AboutMemberUpsertRequestDto req) {
         return aboutService.updateMember(id, req);
     }
 
-    @Operation(summary = "Delete member (admin)")
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized",
-                    content = @Content(schema = @Schema(implementation = ApiError.class))),
-            @ApiResponse(responseCode = "403", description = "Forbidden",
-                    content = @Content(schema = @Schema(implementation = ApiError.class)))
-    })
-    @DeleteMapping("/members/{id}")
-    public void deleteMember(@PathVariable String id) {
+    @Operation(summary = "Update member (admin) - multipart")
+    @PutMapping(value = "/admin/about/members/{id}/multipart", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public AboutMemberDto updateMemberMultipart(
+            @PathVariable UUID id,
+            @RequestPart("data") String dataJson,
+            @RequestPart(value = "image", required = false) MultipartFile image
+    ) {
+        AboutMemberUpsertRequestDto data = jsonReader.read(dataJson, AboutMemberUpsertRequestDto.class);
+        return aboutService.updateMemberMultipart(id, data, image);
+    }
+
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
+    @Operation(summary = "Delete member (admin)")
+    @DeleteMapping("/admin/about/members/{id}")
+    public void deleteMember(@PathVariable UUID id) {
         aboutService.deleteMember(id);
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -40,12 +41,16 @@ public class SecurityConfig {
     @Value("${app.cors.exposed-headers:Authorization}")
     private String exposedHeaders;
 
+
+    @Value("${security.auth.cookie.name:admin_session}")
+    private String authCookieName;
+
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             Environment env,
-            JwtAuthenticationConverter jwtAuthenticationConverter
-
+            JwtAuthenticationConverter jwtAuthenticationConverter,
+            BearerTokenResolver bearerTokenResolver // CHANGE: inject custom resolver
     ) throws Exception {
 
         boolean isDev = env.matchesProfiles("dev");
@@ -57,6 +62,10 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> {
             auth.requestMatchers("/news/**", "/contact/**", "/projects/**", "/home/**", "/about/**").permitAll();
             auth.requestMatchers("/auth/login").permitAll();
+            auth.requestMatchers("/auth/logout").permitAll();
+
+
+            auth.requestMatchers("/actuator/health").permitAll();
 
             if (isDev) {
                 auth.requestMatchers(
@@ -76,7 +85,9 @@ public class SecurityConfig {
             auth.anyRequest().denyAll();
         });
 
+
         http.oauth2ResourceServer(oauth -> oauth
+                .bearerTokenResolver(bearerTokenResolver) // <--- HERE
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
                 .authenticationEntryPoint((req, res, ex) ->
                         writeError(res, req, 401, "Unauthorized", ErrorCode.UNAUTHORIZED, "Unauthorized"))
@@ -88,6 +99,12 @@ public class SecurityConfig {
         http.httpBasic(b -> b.disable());
 
         return http.build();
+    }
+
+
+    @Bean
+    public BearerTokenResolver bearerTokenResolver() {
+        return new CookieOrHeaderBearerTokenResolver(authCookieName);
     }
 
     @Bean
@@ -110,7 +127,8 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
 
-        cfg.setAllowCredentials(false);
+
+        cfg.setAllowCredentials(true);
 
         List<String> origins = splitCsv(allowedOrigins);
         if (origins.isEmpty()) {
@@ -148,7 +166,6 @@ public class SecurityConfig {
         response.setStatus(status);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-
 
         String safeMessage = jsonEscape(message);
         String safePath = jsonEscape(request.getRequestURI());

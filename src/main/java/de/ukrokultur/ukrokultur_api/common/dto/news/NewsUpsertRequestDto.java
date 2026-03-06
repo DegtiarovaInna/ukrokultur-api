@@ -8,7 +8,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record NewsUpsertRequestDto(
-        @NotBlank String id,
+        String slug,
         @NotNull LocalDate newsDate,
         LocalDate eventDate,
 

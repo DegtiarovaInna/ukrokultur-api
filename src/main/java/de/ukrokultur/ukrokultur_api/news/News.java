@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Entity
 @Table(name = "news")
@@ -12,7 +13,8 @@ public class News {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
+    @Column(name = "public_id", nullable = false, unique = true)
+    private UUID publicId;
     @Column(name = "slug", unique = true)
     private String slug;
     @Column(name="published_at")
@@ -42,6 +44,10 @@ public class News {
 
     @Column(name="updated_at", nullable = false)
     private OffsetDateTime updatedAt = OffsetDateTime.now();
+    @PrePersist
+    public void prePersist() {
+        if (publicId == null) publicId = UUID.randomUUID();
+    }
 
     @PreUpdate
     public void preUpdate() {
@@ -49,6 +55,8 @@ public class News {
     }
 
     public Long getId() { return id; }
+    public UUID getPublicId() { return publicId; }
+    public void setPublicId(UUID publicId) { this.publicId = publicId; }
     public OffsetDateTime getPublishedAt() { return publishedAt; }
     public String getVideoUrl() { return videoUrl; }
     public List<NewsTranslation> getTranslations() { return translations; }

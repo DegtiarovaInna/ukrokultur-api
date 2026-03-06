@@ -5,10 +5,15 @@ import de.ukrokultur.ukrokultur_api.common.dto.home.HomeUpsertRequestDto;
 import de.ukrokultur.ukrokultur_api.common.dto.I18nText;
 import de.ukrokultur.ukrokultur_api.common.error.ErrorCode;
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
+import de.ukrokultur.ukrokultur_api.media.MediaService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
+import java.util.*;
+import java.util.UUID;
+import de.ukrokultur.ukrokultur_api.common.slug.SlugGenerator;
 
 @Service
 @Transactional
@@ -18,17 +23,17 @@ public class HomeService {
 
     private final HomePageRepository pageRepo;
     private final HomeWorkFieldRepository workRepo;
+    private final MediaService mediaService;
 
-    public HomeService(HomePageRepository pageRepo, HomeWorkFieldRepository workRepo) {
+    public HomeService(HomePageRepository pageRepo, HomeWorkFieldRepository workRepo, MediaService mediaService) {
         this.pageRepo = pageRepo;
         this.workRepo = workRepo;
+        this.mediaService = mediaService;
     }
 
-    @Transactional(readOnly = true)
     public HomeResponseDto getPublic() {
         HomePage page = getOrCreate();
         List<HomeWorkFieldItem> items = workRepo.findAllByOrderBySortOrderAsc();
-
 
         List<HomeResponseDto.HomeWorkFieldItemDto> itemDtos = items.stream()
                 .filter(HomeWorkFieldItem::isPublished)
@@ -38,7 +43,6 @@ public class HomeService {
         return toResponse(page, itemDtos);
     }
 
-    @Transactional(readOnly = true)
     public HomeResponseDto getAdmin() {
         HomePage page = getOrCreate();
         List<HomeWorkFieldItem> items = workRepo.findAllByOrderBySortOrderAsc();
@@ -52,36 +56,153 @@ public class HomeService {
 
     public HomeResponseDto upsert(HomeUpsertRequestDto req) {
         HomePage page = getOrCreate();
-
         applyPage(page, req);
 
+        List<HomeWorkFieldItem> existing = workRepo.findAllByOrderBySortOrderAsc();
+        Map<UUID, HomeWorkFieldItem> byId = new HashMap<>();
+        for (HomeWorkFieldItem e : existing) {
+            byId.put(e.getPublicId(), e);
+        }
 
-        workRepo.deleteAllInBatch();
+        Set<UUID> incomingIds = new HashSet<>();
 
-        if (req.workFields() != null && req.workFields().items() != null) {
-            for (HomeUpsertRequestDto.HomeWorkFieldItemUpsertDto it : req.workFields().items()) {
-                HomeWorkFieldItem e = new HomeWorkFieldItem();
-                e.setId(it.id().trim());
-                e.setSortOrder(it.order());
-                e.setPublished(Boolean.TRUE.equals(it.published()));
+        List<HomeUpsertRequestDto.HomeWorkFieldItemUpsertDto> incoming = req.workFields().items();
+        if (incoming == null) {
+            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "workFields.items is required");
+        }
 
-                I18nText t = it.title();
-                e.setTitleEn(t.en());
-                e.setTitleDe(t.de());
-                e.setTitleUk(t.uk());
+        int sort = 0;
+        for (HomeUpsertRequestDto.HomeWorkFieldItemUpsertDto it : incoming) {
+            UUID id = parseUuidOrNull(it.id());
+            HomeWorkFieldItem e;
+            if (id != null) {
+                e = byId.get(id);
+                if (e == null) {
+                    throw new ApiException(404, ErrorCode.NOT_FOUND, "HomeWorkFieldItem not found: " + id);
+                }
+                incomingIds.add(id);
+            } else {
+                e = new HomeWorkFieldItem();
+            }
 
-                I18nText d = it.description();
-                e.setDescriptionEn(d.en());
-                e.setDescriptionDe(d.de());
-                e.setDescriptionUk(d.uk());
+            applyWorkField(e, it, sort);
 
-                workRepo.save(e);
+            workRepo.save(e);
+            incomingIds.add(e.getPublicId());
+
+            sort++;
+        }
+
+        for (HomeWorkFieldItem old : existing) {
+            if (!incomingIds.contains(old.getPublicId())) {
+                workRepo.delete(old);
             }
         }
 
         pageRepo.save(page);
-
         return getAdmin();
+    }
+
+    public HomeResponseDto upsertMultipart(HomeUpsertRequestDto data, MultipartFile heroImage, MultipartFile missionImage) {
+        HomePage page = getOrCreate();
+
+        String oldHero = page.getHeroImage();
+        String oldMission = page.getMissionImage();
+
+        String uploadedHero = null;
+        String uploadedMission = null;
+
+        try {
+            HomeUpsertRequestDto.HomeHeroUpsertDto hero = data.hero();
+            HomeUpsertRequestDto.HomeMissionUpsertDto mission = data.mission();
+
+            String heroUrl = (hero.image() != null ? hero.image() : oldHero);
+            if (heroImage != null && !heroImage.isEmpty()) {
+                uploadedHero = mediaService.upload(heroImage, "home").publicUrl();
+                heroUrl = uploadedHero;
+            }
+
+            String missionUrl = (mission.image() != null ? mission.image() : oldMission);
+            if (missionImage != null && !missionImage.isEmpty()) {
+                uploadedMission = mediaService.upload(missionImage, "home").publicUrl();
+                missionUrl = uploadedMission;
+            }
+
+            HomeUpsertRequestDto req = new HomeUpsertRequestDto(
+                    new HomeUpsertRequestDto.HomeHeroUpsertDto(
+                            heroUrl,
+                            hero.title(),
+                            hero.subtitle(),
+                            hero.published()
+                    ),
+                    new HomeUpsertRequestDto.HomeMissionUpsertDto(
+                            missionUrl,
+                            mission.title(),
+                            mission.text(),
+                            mission.published()
+                    ),
+                    data.workFields()
+            );
+
+            HomeResponseDto out = upsert(req);
+
+            if (uploadedHero != null) mediaService.deleteByPublicUrlQuietly(oldHero);
+            if (uploadedMission != null) mediaService.deleteByPublicUrlQuietly(oldMission);
+
+            return out;
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploadedHero);
+            mediaService.deleteByPublicUrlQuietly(uploadedMission);
+            throw ex;
+        }
+    }
+
+    private void applyWorkField(HomeWorkFieldItem e, HomeUpsertRequestDto.HomeWorkFieldItemUpsertDto it, int sortOrder) {
+        e.setSortOrder(sortOrder);
+        e.setPublished(Boolean.TRUE.equals(it.published()));
+
+        I18nText t = it.title();
+        I18nText d = it.description();
+        e.setTitleEn(t.en());
+        e.setTitleDe(t.de());
+        e.setTitleUk(t.uk());
+
+        e.setDescriptionEn(d.en());
+        e.setDescriptionDe(d.de());
+        e.setDescriptionUk(d.uk());
+
+        String requestedSlug = safeTrim(it.slug());
+        if (StringUtils.hasText(requestedSlug)) {
+            String normalized = SlugGenerator.slugify(requestedSlug);
+            if (!StringUtils.hasText(normalized)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "workFields.items.slug is invalid");
+            }
+            if ((e.getSlug() == null || !e.getSlug().equals(normalized)) && workRepo.existsBySlug(normalized)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug already exists: " + normalized);
+            }
+            e.setSlug(normalized);
+        } else if (!StringUtils.hasText(e.getSlug())) {
+            String base = firstNonBlank(t.de(), t.en(), t.uk());
+            e.setSlug(SlugGenerator.generateUnique(base, workRepo::existsBySlug));
+        }
+    }
+
+    private static UUID parseUuidOrNull(String s) {
+        if (s == null || s.isBlank()) return null;
+        try {
+            return UUID.fromString(s.trim());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) return "item";
+        for (String v : values) {
+            if (v != null && !v.isBlank()) return v;
+        }
+        return "item";
     }
 
     private HomePage getOrCreate() {
@@ -144,7 +265,8 @@ public class HomeService {
 
     private HomeResponseDto.HomeWorkFieldItemDto toItemDto(HomeWorkFieldItem e) {
         return new HomeResponseDto.HomeWorkFieldItemDto(
-                e.getId(),
+                e.getPublicId() == null ? null : e.getPublicId().toString(),
+                e.getSlug(),
                 e.getSortOrder(),
                 e.isPublished(),
                 new I18nText(e.getTitleEn(), e.getTitleDe(), e.getTitleUk()),
@@ -173,5 +295,10 @@ public class HomeService {
         );
 
         return new HomeResponseDto(hero, mission, workFields, page.getUpdatedAt());
+    }
+
+    private static String safeTrim(String s) {
+        if (!StringUtils.hasText(s)) return null;
+        return s.trim();
     }
 }

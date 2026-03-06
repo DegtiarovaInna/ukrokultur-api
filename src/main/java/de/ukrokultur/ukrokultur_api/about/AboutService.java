@@ -5,9 +5,13 @@ import de.ukrokultur.ukrokultur_api.common.dto.I18nText;
 import de.ukrokultur.ukrokultur_api.common.error.ErrorCode;
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import de.ukrokultur.ukrokultur_api.common.exception.NotFoundException;
+import de.ukrokultur.ukrokultur_api.common.slug.SlugGenerator;
+import de.ukrokultur.ukrokultur_api.media.MediaService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.UUID;
 import java.util.List;
 
 @Service
@@ -16,13 +20,18 @@ public class AboutService {
 
     private final AboutIntroRepository introRepository;
     private final AboutMemberRepository memberRepository;
+    private final MediaService mediaService;
 
-    public AboutService(AboutIntroRepository introRepository, AboutMemberRepository memberRepository) {
+    public AboutService(
+            AboutIntroRepository introRepository,
+            AboutMemberRepository memberRepository,
+            MediaService mediaService
+    ) {
         this.introRepository = introRepository;
         this.memberRepository = memberRepository;
+        this.mediaService = mediaService;
     }
 
-    @Transactional(readOnly = true)
     public AboutResponseDto getPublic() {
         AboutIntro intro = getOrCreateIntro();
         List<AboutMember> members = memberRepository.findAllOrdered();
@@ -36,7 +45,6 @@ public class AboutService {
         return new AboutResponseDto(introDto, memberDtos, intro.getUpdatedAt());
     }
 
-    @Transactional(readOnly = true)
     public AboutIntroDto getIntroAdmin() {
         return toIntroDto(getOrCreateIntro());
     }
@@ -53,40 +61,215 @@ public class AboutService {
         return toIntroDto(intro);
     }
 
+    public AboutIntroDto updateIntroMultipart(AboutIntroUpsertRequestDto data, MultipartFile image) {
+        AboutIntro intro = getOrCreateIntro();
+        String old = intro.getImage();
+
+        String uploaded = null;
+
+        try {
+            String imageUrl = (data.image() != null ? data.image() : old);
+
+            if (image != null && !image.isEmpty()) {
+                uploaded = mediaService.upload(image, "about").publicUrl();
+                imageUrl = uploaded;
+            }
+
+            AboutIntroUpsertRequestDto req = new AboutIntroUpsertRequestDto(
+                    imageUrl,
+                    data.title(),
+                    data.text(),
+                    data.published()
+            );
+
+            AboutIntroDto out = updateIntro(req);
+
+            if (uploaded != null) {
+                mediaService.deleteByPublicUrlQuietly(old);
+            }
+
+            return out;
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploaded);
+            throw ex;
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<AboutMemberDto> getMembersAdmin() {
         return memberRepository.findAllOrdered().stream().map(this::toMemberDto).toList();
     }
 
     public AboutMemberDto createMember(AboutMemberUpsertRequestDto req) {
-        String id = req.id().trim();
-        if (memberRepository.existsById(id)) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Member id already exists: " + id);
-        }
         AboutMember m = new AboutMember();
-        apply(m, req);
-        return toMemberDto(memberRepository.save(m));
+
+        int max = memberRepository.findMaxSortOrder();
+        m.setSortOrder(max + 1);
+
+        String slug = resolveUniqueSlug(req.slug(), req.name());
+        m.setSlug(slug);
+
+        applyFields(m, req);
+
+        AboutMember saved = memberRepository.save(m);
+        return toMemberDto(saved);
     }
 
-    public AboutMemberDto updateMember(String id, AboutMemberUpsertRequestDto req) {
-        AboutMember m = memberRepository.findById(id)
-                .orElseThrow(() -> NotFoundException.of("AboutMember", id));
+    public AboutMemberDto createMemberMultipart(AboutMemberUpsertRequestDto data, MultipartFile image) {
+        String uploaded = null;
 
-        if (!id.equals(req.id().trim())) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "id cannot be changed");
+        try {
+            String imageUrl = data.image();
+            if (image != null && !image.isEmpty()) {
+                uploaded = mediaService.upload(image, "about").publicUrl();
+                imageUrl = uploaded;
+            }
+
+            AboutMemberUpsertRequestDto req = new AboutMemberUpsertRequestDto(
+                    data.slug(),
+                    data.name(),
+                    imageUrl,
+                    data.order(),
+                    data.published(),
+                    data.instagramUrl(),
+                    data.role(),
+                    data.biography()
+            );
+
+            return createMember(req);
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploaded);
+            throw ex;
         }
-        apply(m, req);
+    }
+
+    public AboutMemberDto updateMember(UUID id, AboutMemberUpsertRequestDto req) {
+        AboutMember m = memberRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.of("AboutMember", id));
+
+        if (req.slug() != null && !req.slug().isBlank()) {
+            String normalized = SlugGenerator.slugify(req.slug());
+            if (normalized == null) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug is invalid");
+            }
+            if (!normalized.equals(m.getSlug()) && memberRepository.existsBySlug(normalized)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Member slug already exists: " + normalized);
+            }
+            m.setSlug(normalized);
+        } else if (m.getSlug() == null || m.getSlug().isBlank()) {
+            m.setSlug(resolveUniqueSlug(null, req.name()));
+        }
+
+        Integer requestedOrder = req.order();
+        if (requestedOrder != null) {
+            moveMember(m, requestedOrder);
+        }
+
+        applyFields(m, req);
+
         return toMemberDto(memberRepository.save(m));
     }
 
-    public void deleteMember(String id) {
+    public AboutMemberDto updateMemberMultipart(UUID id, AboutMemberUpsertRequestDto data, MultipartFile image) {
+        AboutMember existing = memberRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.of("AboutMember", id));
+
+        String old = existing.getImage();
+        String uploaded = null;
+
+        try {
+            String imageUrl = (data.image() != null ? data.image() : old);
+
+            if (image != null && !image.isEmpty()) {
+                uploaded = mediaService.upload(image, "about").publicUrl();
+                imageUrl = uploaded;
+            }
+
+            AboutMemberUpsertRequestDto req = new AboutMemberUpsertRequestDto(
+                    data.slug(),
+                    data.name(),
+                    imageUrl,
+                    data.order(),
+                    data.published(),
+                    data.instagramUrl(),
+                    data.role(),
+                    data.biography()
+            );
+
+            AboutMemberDto out = updateMember(id, req);
+
+            if (uploaded != null) {
+                mediaService.deleteByPublicUrlQuietly(old);
+            }
+
+            return out;
+
+        } catch (RuntimeException ex) {
+            mediaService.deleteByPublicUrlQuietly(uploaded);
+            throw ex;
+        }
+    }
+
+    public void deleteMember(UUID id) {
         AboutMember m = memberRepository.findById(id)
                 .orElseThrow(() -> NotFoundException.of("AboutMember", id));
+
+        String old = m.getImage();
+
         memberRepository.delete(m);
+        compressMemberOrder();
+
+        mediaService.deleteByPublicUrlQuietly(old);
+    }
+
+    private String resolveUniqueSlug(String requested, String nameBase) {
+        if (requested != null && !requested.isBlank()) {
+            String normalized = SlugGenerator.slugify(requested);
+            if (normalized == null) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Slug is invalid");
+            }
+            if (memberRepository.existsBySlug(normalized)) {
+                throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Member slug already exists: " + normalized);
+            }
+            return normalized;
+        }
+        return SlugGenerator.generateUnique(nameBase, memberRepository::existsBySlug);
+    }
+
+    private void moveMember(AboutMember target, int newIndex) {
+        List<AboutMember> ordered = memberRepository.findAllOrdered();
+        ordered.removeIf(x -> x.getId().equals(target.getId()));
+
+        int idx = Math.max(0, Math.min(newIndex, ordered.size()));
+        ordered.add(idx, target);
+
+        for (int i = 0; i < ordered.size(); i++) {
+            ordered.get(i).setSortOrder(i);
+        }
+
+        memberRepository.saveAll(ordered);
+    }
+
+    private void compressMemberOrder() {
+        List<AboutMember> ordered = memberRepository.findAllOrdered();
+        for (int i = 0; i < ordered.size(); i++) {
+            ordered.get(i).setSortOrder(i);
+        }
+        memberRepository.saveAll(ordered);
+    }
+
+    private void applyFields(AboutMember m, AboutMemberUpsertRequestDto req) {
+        m.setName(req.name().trim());
+        m.setImage(req.image());
+        m.setPublished(Boolean.TRUE.equals(req.published()));
+        m.setInstagramUrl(req.instagramUrl());
+        m.setRole(toEmb(req.role()));
+        m.setBiography(toEmb(req.biography()));
     }
 
     private AboutIntro getOrCreateIntro() {
-        // храним одну запись intro
         return introRepository.findAll().stream().findFirst().orElseGet(() -> {
             AboutIntro i = new AboutIntro();
             i.setImage(null);
@@ -96,17 +279,6 @@ public class AboutService {
             introRepository.save(i);
             return i;
         });
-    }
-
-    private void apply(AboutMember m, AboutMemberUpsertRequestDto req) {
-        m.setId(req.id().trim());
-        m.setName(req.name().trim());
-        m.setImage(req.image());
-        m.setOrder(req.order());
-        m.setPublished(Boolean.TRUE.equals(req.published()));
-        m.setInstagramUrl(req.instagramUrl());
-        m.setRole(toEmb(req.role()));
-        m.setBiography(toEmb(req.biography()));
     }
 
     private AboutIntroDto toIntroDto(AboutIntro i) {
@@ -120,10 +292,11 @@ public class AboutService {
 
     private AboutMemberDto toMemberDto(AboutMember m) {
         return new AboutMemberDto(
-                m.getId(),
+                m.getId() == null ? null : m.getId().toString(),
+                m.getSlug(),
                 m.getName(),
                 m.getImage(),
-                m.getOrder(),
+                m.getSortOrder(),
                 m.isPublished(),
                 toDto(m.getRole()),
                 toDto(m.getBiography()),

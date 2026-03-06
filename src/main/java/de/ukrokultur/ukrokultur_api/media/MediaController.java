@@ -1,6 +1,6 @@
 package de.ukrokultur.ukrokultur_api.media;
 
-import de.ukrokultur.ukrokultur_api.common.dto.UploadResponseDto;
+import de.ukrokultur.ukrokultur_api.common.dto.media.UploadResponseDto;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -11,6 +11,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+
+import java.util.List;
 
 @Tag(name = "Media (Admin)", description = "Admin media upload/delete (Supabase Storage).")
 @SecurityRequirement(name = de.ukrokultur.ukrokultur_api.config.OpenApiConfig.BEARER_SCHEME_NAME)
@@ -57,6 +59,29 @@ public class MediaController {
             @RequestPart("file") MultipartFile file
     ) {
         return mediaService.upload(file, folder);
+    }
+
+    @Operation(
+            summary = "Upload many files to folder",
+            description = "Uploads multiple files in one multipart request to '{folder}/'. Part name: files"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "OK"),
+            @ApiResponse(responseCode = "400", description = "Validation error",
+                    content = @Content(schema = @Schema(implementation = de.ukrokultur.ukrokultur_api.common.error.ApiError.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized",
+                    content = @Content(schema = @Schema(implementation = de.ukrokultur.ukrokultur_api.common.error.ApiError.class))),
+            @ApiResponse(responseCode = "403", description = "Forbidden",
+                    content = @Content(schema = @Schema(implementation = de.ukrokultur.ukrokultur_api.common.error.ApiError.class))),
+            @ApiResponse(responseCode = "502", description = "Storage error",
+                    content = @Content(schema = @Schema(implementation = de.ukrokultur.ukrokultur_api.common.error.ApiError.class)))
+    })
+    @PostMapping(value = "/upload/batch/{folder}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public List<UploadResponseDto> uploadBatch(
+            @PathVariable("folder") String folder,
+            @RequestPart("files") List<MultipartFile> files
+    ) {
+        return mediaService.uploadMany(files, folder);
     }
 
     @Operation(summary = "Delete file", description = "Deletes a file from Supabase Storage by objectPath.")

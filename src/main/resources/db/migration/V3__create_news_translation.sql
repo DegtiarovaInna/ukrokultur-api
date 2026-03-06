@@ -6,5 +6,4 @@ create table if not exists news_translation (
     text text not null,
     unique (news_id, lang)
 );
-
 create index if not exists idx_news_translation_news_id on news_translation(news_id);

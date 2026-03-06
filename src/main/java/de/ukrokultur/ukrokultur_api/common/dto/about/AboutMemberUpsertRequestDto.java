@@ -5,10 +5,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 public record AboutMemberUpsertRequestDto(
-        @NotBlank String id,
+       String slug,
         @NotBlank String name,
         String image,
-        @NotNull Integer order,
+        Integer order,
         @NotNull Boolean published,
         String instagramUrl,
         @NotNull I18nText role,
