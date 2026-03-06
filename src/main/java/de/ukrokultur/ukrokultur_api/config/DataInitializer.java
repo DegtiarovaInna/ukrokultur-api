@@ -4,42 +4,68 @@ import de.ukrokultur.ukrokultur_api.auth.Role;
 import de.ukrokultur.ukrokultur_api.auth.User;
 import de.ukrokultur.ukrokultur_api.auth.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-@Configuration
-public class DataInitializer {
+import java.util.ArrayList;
+import java.util.List;
 
-    @Value("${admin1.email:}")
-    private String admin1Email;
-    @Value("${admin1.password:}")
-    private String admin1Password;
+@Component
+public class DataInitializer implements ApplicationRunner {
 
-    @Value("${admin2.email:}")
-    private String admin2Email;
-    @Value("${admin2.password:}")
-    private String admin2Password;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    @Bean
-    ApplicationRunner initAdmins(UserRepository userRepository, PasswordEncoder encoder) {
-        return args -> {
-            createAdminIfConfigured(userRepository, encoder, admin1Email, admin1Password);
-            createAdminIfConfigured(userRepository, encoder, admin2Email, admin2Password);
-        };
+    private final boolean enabled;
+
+
+    private final String admin1Email;
+    private final String admin1Password;
+    private final String admin2Email;
+    private final String admin2Password;
+
+    public DataInitializer(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            @Value("${security.bootstrap-admins.enabled:false}") boolean enabled,
+            @Value("${security.bootstrap-admins.admin1.email:}") String admin1Email,
+            @Value("${security.bootstrap-admins.admin1.password:}") String admin1Password,
+            @Value("${security.bootstrap-admins.admin2.email:}") String admin2Email,
+            @Value("${security.bootstrap-admins.admin2.password:}") String admin2Password
+    ) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.enabled = enabled;
+        this.admin1Email = admin1Email;
+        this.admin1Password = admin1Password;
+        this.admin2Email = admin2Email;
+        this.admin2Password = admin2Password;
     }
 
-    private void createAdminIfConfigured(UserRepository repo, PasswordEncoder encoder, String email, String password) {
-        if (!StringUtils.hasText(email) || !StringUtils.hasText(password)) return;
+    @Override
+    public void run(ApplicationArguments args) {
+        if (!enabled) return;
 
-        if (!repo.existsByEmail(email)) {
-            repo.save(new User(
-                    email.trim(),
-                    encoder.encode(password),
-                    Role.ADMIN
-            ));
+        List<AdminSeed> admins = new ArrayList<>();
+        admins.add(new AdminSeed(admin1Email, admin1Password));
+        admins.add(new AdminSeed(admin2Email, admin2Password));
+
+        for (AdminSeed a : admins) {
+            if (!StringUtils.hasText(a.email) || !StringUtils.hasText(a.password)) {
+                continue;
+            }
+            if (userRepository.existsByEmail(a.email)) {
+                continue;
+            }
+
+            User u = new User(a.email, passwordEncoder.encode(a.password), Role.ADMIN);
+            userRepository.save(u);
         }
     }
+
+    private record AdminSeed(String email, String password) {}
 }

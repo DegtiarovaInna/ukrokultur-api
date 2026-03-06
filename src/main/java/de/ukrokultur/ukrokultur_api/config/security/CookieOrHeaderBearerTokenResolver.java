@@ -18,11 +18,11 @@ public class CookieOrHeaderBearerTokenResolver implements BearerTokenResolver {
     public String resolve(HttpServletRequest request) {
         String path = request.getRequestURI();
 
+        if (path.equals("/auth/login") || path.equals("/auth/logout")) {
+            return null;
+        }
 
-        boolean shouldResolveToken =
-                path.startsWith("/admin/") ||
-                        path.startsWith("/auth/");
-
+        boolean shouldResolveToken = path.startsWith("/admin/");
         if (!shouldResolveToken) {
             return null;
         }

@@ -1,23 +1,22 @@
 package de.ukrokultur.ukrokultur_api.common.web;
 
-
 import de.ukrokultur.ukrokultur_api.common.error.ErrorCode;
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class MultipartJsonReader {
 
-    private final JsonMapper jsonMapper;
+    private final ObjectMapper objectMapper;
 
-    public MultipartJsonReader(JsonMapper jsonMapper) {
-        this.jsonMapper = jsonMapper;
+    public MultipartJsonReader(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
     }
 
     public <T> T read(String json, Class<T> type) {
         try {
-            return jsonMapper.readValue(json, type);
+            return objectMapper.readValue(json, type);
         } catch (Exception ex) {
             throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Invalid JSON in multipart 'data'");
         }

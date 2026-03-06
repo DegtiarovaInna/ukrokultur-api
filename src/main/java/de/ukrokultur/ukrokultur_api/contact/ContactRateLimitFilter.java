@@ -23,14 +23,16 @@ public class ContactRateLimitFilter extends OncePerRequestFilter {
     public ContactRateLimitFilter(ContactRateLimitProperties props) {
         this.props = props;
         this.counters = Caffeine.newBuilder()
-                .expireAfterWrite(props.window())
+                .expireAfterWrite(props.getWindow())
                 .maximumSize(20_000)
                 .build();
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        if (!props.enabled()) return true;
+        if (!props.isEnabled()) {
+            return true;
+        }
 
         String path = request.getRequestURI();
         return !(path != null
@@ -39,14 +41,16 @@ public class ContactRateLimitFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
-            throws ServletException, IOException {
-
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain chain
+    ) throws ServletException, IOException {
 
         String key = resolveClientIp(request);
 
         AtomicInteger c = counters.get(key, k -> new AtomicInteger(0));
-        if (c.incrementAndGet() > props.capacity()) {
+        if (c.incrementAndGet() > props.getMaxRequests()) {
             throw new ApiException(429, ErrorCode.TOO_MANY_REQUESTS, "Too many requests");
         }
 
