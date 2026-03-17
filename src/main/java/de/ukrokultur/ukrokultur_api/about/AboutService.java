@@ -270,14 +270,13 @@ public class AboutService {
     }
 
     private AboutIntro getOrCreateIntro() {
-        return introRepository.findAll().stream().findFirst().orElseGet(() -> {
+        return introRepository.findTopByOrderByUpdatedAtDesc().orElseGet(() -> {
             AboutIntro i = new AboutIntro();
             i.setImage(null);
             i.setTitle(new I18nEmbeddable("", "", ""));
             i.setText(new I18nEmbeddable("", "", ""));
             i.setPublished(true);
-            introRepository.save(i);
-            return i;
+            return introRepository.save(i);
         });
     }
 
