@@ -39,7 +39,12 @@ public class ProjectController {
     ) {
         return service.getPage(page, pageSize, publishedOnly);
     }
-
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
+    @Operation(summary = "Get project by id (admin)")
+    @GetMapping("/admin/projects/{id}")
+    public ProjectItemDto getByIdAdmin(@PathVariable UUID id) {
+        return service.getByIdAdmin(id);
+    }
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Create project (JSON)")
     @PostMapping(value = "/admin/projects", consumes = MediaType.APPLICATION_JSON_VALUE)

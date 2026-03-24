@@ -1,17 +1,18 @@
 package de.ukrokultur.ukrokultur_api.common.error;
 
 import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
+import de.ukrokultur.ukrokultur_api.common.exception.RequestValidationException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
@@ -39,6 +40,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(RequestValidationException.class)
+    public ResponseEntity<ApiError> handleRequestValidation(RequestValidationException ex, HttpServletRequest req) {
+        ApiError body = ApiError.of(
+                ex.getStatus(),
+                "Bad Request",
+                ex.getCode(),
+                ex.getMessage(),
+                req.getRequestURI(),
+                ex.getFieldErrors()
+        );
+        return ResponseEntity.status(ex.getStatus()).body(body);
+    }
+
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiError> handleApi(ApiException ex, HttpServletRequest req) {
         ApiError body = ApiError.of(
@@ -51,6 +65,7 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(ex.getStatus()).body(body);
     }
+
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ApiError> handleAuth(AuthenticationException ex, HttpServletRequest req) {
         ApiError body = ApiError.of(
@@ -63,6 +78,7 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(401).body(body);
     }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiError> handleDenied(AccessDeniedException ex, HttpServletRequest req) {
         ApiError body = ApiError.of(
@@ -75,6 +91,7 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(403).body(body);
     }
+
     @ExceptionHandler({
             HttpMessageNotReadableException.class,
             MissingServletRequestPartException.class,
@@ -104,6 +121,7 @@ public class GlobalExceptionHandler {
         );
         return ResponseEntity.status(415).body(body);
     }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleGeneric(Exception ex, HttpServletRequest req) {
         ApiError body = ApiError.of(

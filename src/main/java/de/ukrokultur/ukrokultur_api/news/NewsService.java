@@ -53,6 +53,12 @@ public class NewsService {
     }
 
 
+    @Transactional(readOnly = true)
+    public NewsItemDto getByIdAdmin(UUID publicId) {
+        News n = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
+        return toItemDto(n);
+    }
     public NewsItemDto createMultipart(NewsUpsertRequestDto data, List<MultipartFile> images) {
         List<String> uploaded = List.of();
 

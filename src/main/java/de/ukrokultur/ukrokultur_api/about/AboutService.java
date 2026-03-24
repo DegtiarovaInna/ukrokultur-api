@@ -48,6 +48,12 @@ public class AboutService {
     public AboutIntroDto getIntroAdmin() {
         return toIntroDto(getOrCreateIntro());
     }
+    @Transactional(readOnly = true)
+    public AboutMemberDto getMemberAdmin(UUID id) {
+        AboutMember m = memberRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.of("AboutMember", id));
+        return toMemberDto(m);
+    }
 
     public AboutIntroDto updateIntro(AboutIntroUpsertRequestDto req) {
         AboutIntro intro = getOrCreateIntro();

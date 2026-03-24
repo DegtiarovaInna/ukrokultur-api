@@ -63,7 +63,13 @@ public class AboutController {
     public List<AboutMemberDto> listMembersAdmin() {
         return aboutService.getMembersAdmin();
     }
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
 
+    @Operation(summary = "Get member by id (admin)")
+    @GetMapping("/admin/about/members/{id}")
+    public AboutMemberDto getMemberAdmin(@PathVariable UUID id) {
+        return aboutService.getMemberAdmin(id);
+    }
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Create member (admin) - JSON")
     @PostMapping(value = "/admin/about/members", consumes = MediaType.APPLICATION_JSON_VALUE)
