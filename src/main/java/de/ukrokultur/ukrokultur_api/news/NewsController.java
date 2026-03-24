@@ -43,7 +43,12 @@ public class NewsController {
     ) {
         return newsService.getPage(page, pageSize, publishedOnly);
     }
-
+    @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
+    @Operation(summary = "Get news by id (admin)")
+    @GetMapping("/admin/news/{id}")
+    public NewsItemDto getByIdAdmin(@PathVariable UUID id) {
+        return newsService.getByIdAdmin(id);
+    }
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Create news (JSON)")
     @PostMapping(value = "/admin/news", consumes = MediaType.APPLICATION_JSON_VALUE)

@@ -47,7 +47,12 @@ public class ProjectService {
                 p.getTotalPages()
         );
     }
-
+    @Transactional(readOnly = true)
+    public ProjectItemDto getByIdAdmin(UUID publicId) {
+        Project p = repo.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("Project", publicId));
+        return toDto(p);
+    }
     public ProjectItemDto createMultipart(ProjectUpsertRequestDto data, MultipartFile coverImage, List<MultipartFile> galleryImages) {
         String uploadedCover = null;
         List<String> uploadedGallery = List.of();
