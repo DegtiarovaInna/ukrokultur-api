@@ -43,7 +43,11 @@ public class NewsController {
     ) {
         return newsService.getPage(page, pageSize, publishedOnly);
     }
-
+    @Operation(summary = "Get news by id (public)")
+    @GetMapping("/news/{id}")
+    public NewsItemDto getByIdPublic(@PathVariable UUID id) {
+        return newsService.getByIdPublic(id);
+    }
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Get news by id (admin)")
     @GetMapping("/admin/news/{id}")

@@ -48,6 +48,17 @@ public class ProjectService {
         );
     }
     @Transactional(readOnly = true)
+    public ProjectItemDto getByIdPublic(UUID publicId) {
+        Project p = repo.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("Project", publicId));
+
+        if (!p.isPublished()) {
+            throw NotFoundException.of("Project", publicId);
+        }
+
+        return toDto(p);
+    }
+    @Transactional(readOnly = true)
     public ProjectItemDto getByIdAdmin(UUID publicId) {
         Project p = repo.findByPublicId(publicId)
                 .orElseThrow(() -> NotFoundException.of("Project", publicId));

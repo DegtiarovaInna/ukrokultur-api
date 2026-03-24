@@ -51,7 +51,17 @@ public class NewsService {
                 p.getTotalPages()
         );
     }
+    @Transactional(readOnly = true)
+    public NewsItemDto getByIdPublic(UUID publicId) {
+        News n = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
 
+        if (!n.isPublished()) {
+            throw NotFoundException.of("News", publicId);
+        }
+
+        return toItemDto(n);
+    }
     @Transactional(readOnly = true)
     public NewsItemDto getByIdAdmin(UUID publicId) {
         News n = newsRepository.findByPublicId(publicId)
