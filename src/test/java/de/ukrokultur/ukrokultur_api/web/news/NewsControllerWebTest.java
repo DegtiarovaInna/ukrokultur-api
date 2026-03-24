@@ -1,12 +1,13 @@
 package de.ukrokultur.ukrokultur_api.web.news;
 
-import tools.jackson.databind.ObjectMapper;
 import de.ukrokultur.ukrokultur_api.common.dto.I18nText;
-import de.ukrokultur.ukrokultur_api.common.web.MultipartJsonReader;
-import de.ukrokultur.ukrokultur_api.contact.ContactRateLimitFilter;
+import de.ukrokultur.ukrokultur_api.common.dto.media.OrderUrlsRequestDto;
+import de.ukrokultur.ukrokultur_api.common.dto.media.UrlRequestDto;
 import de.ukrokultur.ukrokultur_api.common.dto.news.NewsItemDto;
 import de.ukrokultur.ukrokultur_api.common.dto.news.NewsPageResultDto;
 import de.ukrokultur.ukrokultur_api.common.dto.news.NewsUpsertRequestDto;
+import de.ukrokultur.ukrokultur_api.common.web.MultipartJsonReader;
+import de.ukrokultur.ukrokultur_api.contact.ContactRateLimitFilter;
 import de.ukrokultur.ukrokultur_api.news.NewsController;
 import de.ukrokultur.ukrokultur_api.news.NewsService;
 import org.junit.jupiter.api.Test;
@@ -14,8 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -50,6 +53,32 @@ class NewsControllerWebTest {
                         .param("publishedOnly", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items").isArray());
+    }
+
+    @Test
+    void getByIdAdmin_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        when(newsService.getByIdAdmin(id)).thenReturn(
+                new NewsItemDto(
+                        id.toString(),
+                        "n1",
+                        LocalDate.of(2025, 6, 21),
+                        null,
+                        new I18nText("en", "de", "uk"),
+                        new I18nText("en", "de", "uk"),
+                        List.of(),
+                        List.of(),
+                        true,
+                        null,
+                        null
+                )
+        );
+
+        mvc.perform(get("/admin/news/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.slug").value("n1"));
     }
 
     @Test
@@ -102,7 +131,7 @@ class NewsControllerWebTest {
         );
 
         when(jsonReader.read(anyString(), eq(NewsUpsertRequestDto.class))).thenReturn(dto);
-        when(newsService.createMultipart(eq(dto), any())).thenReturn(
+        when(newsService.createMultipart(eq(dto), any(), isNull())).thenReturn(
                 new NewsItemDto(
                         "id",
                         "n1",
@@ -118,12 +147,57 @@ class NewsControllerWebTest {
                 )
         );
 
-        var dataPart = new org.springframework.mock.web.MockMultipartFile(
+        MockMultipartFile dataPart = new MockMultipartFile(
                 "data", "", "application/json", om.writeValueAsBytes(dto)
         );
 
         mvc.perform(multipart("/admin/news/multipart")
                         .file(dataPart)
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slug").value("n1"));
+    }
+
+    @Test
+    void createMultipart_withVideo_callsService() throws Exception {
+        var dto = new NewsUpsertRequestDto(
+                "n1",
+                LocalDate.of(2025, 6, 21),
+                null,
+                new I18nText("en", "de", "uk"),
+                new I18nText("en", "de", "uk"),
+                List.of(),
+                List.of(),
+                true
+        );
+
+        when(jsonReader.read(anyString(), eq(NewsUpsertRequestDto.class))).thenReturn(dto);
+        when(newsService.createMultipart(eq(dto), any(), any())).thenReturn(
+                new NewsItemDto(
+                        "id",
+                        "n1",
+                        dto.newsDate(),
+                        dto.eventDate(),
+                        dto.title(),
+                        dto.content(),
+                        List.of(),
+                        List.of(),
+                        true,
+                        null,
+                        null
+                )
+        );
+
+        MockMultipartFile dataPart = new MockMultipartFile(
+                "data", "", "application/json", om.writeValueAsBytes(dto)
+        );
+        MockMultipartFile videoPart = new MockMultipartFile(
+                "video", "video.mp4", "video/mp4", "mp4".getBytes()
+        );
+
+        mvc.perform(multipart("/admin/news/multipart")
+                        .file(dataPart)
+                        .file(videoPart)
                         .contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value("n1"));
@@ -145,7 +219,7 @@ class NewsControllerWebTest {
         );
 
         when(jsonReader.read(anyString(), eq(NewsUpsertRequestDto.class))).thenReturn(dto);
-        when(newsService.updateMultipart(eq(id), eq(dto), any())).thenReturn(
+        when(newsService.updateMultipart(eq(id), eq(dto), any(), isNull())).thenReturn(
                 new NewsItemDto(
                         id.toString(),
                         "n1",
@@ -161,13 +235,67 @@ class NewsControllerWebTest {
                 )
         );
 
-        var dataPart = new org.springframework.mock.web.MockMultipartFile(
+        MockMultipartFile dataPart = new MockMultipartFile(
                 "data", "", "application/json", om.writeValueAsBytes(dto)
         );
 
         mvc.perform(multipart("/admin/news/{id}/multipart", id)
                         .file(dataPart)
-                        .with(req -> { req.setMethod("PUT"); return req; })
+                        .with(req -> {
+                            req.setMethod("PUT");
+                            return req;
+                        })
+                        .contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id.toString()));
+    }
+
+    @Test
+    void updateMultipart_withVideo_callsService() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        var dto = new NewsUpsertRequestDto(
+                null,
+                LocalDate.of(2025, 6, 21),
+                null,
+                new I18nText("en", "de", "uk"),
+                new I18nText("en", "de", "uk"),
+                null,
+                List.of(),
+                true
+        );
+
+        when(jsonReader.read(anyString(), eq(NewsUpsertRequestDto.class))).thenReturn(dto);
+        when(newsService.updateMultipart(eq(id), eq(dto), any(), any())).thenReturn(
+                new NewsItemDto(
+                        id.toString(),
+                        "n1",
+                        dto.newsDate(),
+                        dto.eventDate(),
+                        dto.title(),
+                        dto.content(),
+                        List.of(),
+                        List.of(),
+                        true,
+                        null,
+                        null
+                )
+        );
+
+        MockMultipartFile dataPart = new MockMultipartFile(
+                "data", "", "application/json", om.writeValueAsBytes(dto)
+        );
+        MockMultipartFile videoPart = new MockMultipartFile(
+                "video", "video.mp4", "video/mp4", "mp4".getBytes()
+        );
+
+        mvc.perform(multipart("/admin/news/{id}/multipart", id)
+                        .file(dataPart)
+                        .file(videoPart)
+                        .with(req -> {
+                            req.setMethod("PUT");
+                            return req;
+                        })
                         .contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id.toString()));
@@ -194,9 +322,7 @@ class NewsControllerWebTest {
 
         mvc.perform(delete("/admin/news/{id}/images", id)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(om.writeValueAsString(
-                                new de.ukrokultur.ukrokultur_api.common.dto.media.UrlRequestDto("u1")
-                        )))
+                        .content(om.writeValueAsString(new UrlRequestDto("u1"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.images[0]").value("u2"));
     }
@@ -222,9 +348,7 @@ class NewsControllerWebTest {
 
         mvc.perform(patch("/admin/news/{id}/images/order", id)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(om.writeValueAsString(
-                                new de.ukrokultur.ukrokultur_api.common.dto.media.OrderUrlsRequestDto(List.of("u2", "u1"))
-                        )))
+                        .content(om.writeValueAsString(new OrderUrlsRequestDto(List.of("u2", "u1")))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.images[0]").value("u2"));
     }

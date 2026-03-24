@@ -51,24 +51,47 @@ public class NewsService {
                 p.getTotalPages()
         );
     }
+    @Transactional(readOnly = true)
+    public NewsItemDto getByIdPublic(UUID publicId) {
+        News n = newsRepository.findByPublicId(publicId)
+                .orElseThrow(() -> NotFoundException.of("News", publicId));
 
+        if (!n.isPublished()) {
+            throw NotFoundException.of("News", publicId);
+        }
 
+        return toItemDto(n);
+    }
     @Transactional(readOnly = true)
     public NewsItemDto getByIdAdmin(UUID publicId) {
         News n = newsRepository.findByPublicId(publicId)
                 .orElseThrow(() -> NotFoundException.of("News", publicId));
         return toItemDto(n);
     }
-    public NewsItemDto createMultipart(NewsUpsertRequestDto data, List<MultipartFile> images) {
-        List<String> uploaded = List.of();
+
+    public NewsItemDto createMultipart(NewsUpsertRequestDto data, List<MultipartFile> images, MultipartFile video) {
+        List<String> uploadedImages = List.of();
+        String uploadedVideo = null;
 
         try {
             List<String> urls = data.images();
 
             if (images != null && !images.isEmpty()) {
-                uploaded = mediaService.uploadMany(images, "news")
+                uploadedImages = mediaService.uploadMany(images, "news")
                         .stream().map(x -> x.publicUrl()).toList();
-                urls = uploaded;
+                urls = uploadedImages;
+            }
+
+            List<NewsVideoDto> videos = data.videos();
+            if (video != null && !video.isEmpty()) {
+                uploadedVideo = mediaService.upload(video, "news").publicUrl();
+
+                String label = null;
+                if (data.videos() != null && !data.videos().isEmpty()) {
+                    label = data.videos().get(0).label();
+                }
+
+                videos = List.of(new NewsVideoDto("mp4", uploadedVideo, label));
             }
 
             NewsUpsertRequestDto req = new NewsUpsertRequestDto(
@@ -78,37 +101,61 @@ public class NewsService {
                     data.title(),
                     data.content(),
                     urls,
-                    data.videos(),
+                    videos,
                     data.published()
             );
 
             return create(req);
 
         } catch (RuntimeException ex) {
-
-            mediaService.deleteManyByPublicUrlsQuietly(uploaded);
+            mediaService.deleteManyByPublicUrlsQuietly(uploadedImages);
+            mediaService.deleteByPublicUrlQuietly(uploadedVideo);
             throw ex;
         }
     }
 
-
-    public NewsItemDto updateMultipart(UUID publicId, NewsUpsertRequestDto data, List<MultipartFile> images) {
+    public NewsItemDto updateMultipart(UUID publicId, NewsUpsertRequestDto data, List<MultipartFile> images, MultipartFile video) {
         News existing = newsRepository.findByPublicId(publicId)
                 .orElseThrow(() -> NotFoundException.of("News", publicId));
 
         List<String> oldUrls = extractImageUrls(existing);
+        String oldVideoUrl = existing.getVideoUrl();
 
-        List<String> uploaded = List.of();
+        List<String> uploadedImages = List.of();
+        String uploadedVideo = null;
 
         try {
-
             List<String> urls = (data.images() != null ? data.images() : oldUrls);
 
-
             if (images != null && !images.isEmpty()) {
-                uploaded = mediaService.uploadMany(images, "news")
+                uploadedImages = mediaService.uploadMany(images, "news")
                         .stream().map(x -> x.publicUrl()).toList();
-                urls = uploaded;
+                urls = uploadedImages;
+            }
+
+
+            List<NewsVideoDto> videos;
+            if (video != null && !video.isEmpty()) {
+                uploadedVideo = mediaService.upload(video, "news").publicUrl();
+
+                String label = null;
+                if (data.videos() != null && !data.videos().isEmpty()) {
+                    label = data.videos().get(0).label();
+                }
+
+                videos = List.of(new NewsVideoDto("mp4", uploadedVideo, label));
+            } else if (data.videos() == null) {
+                if (StringUtils.hasText(oldVideoUrl)) {
+                    videos = List.of(new NewsVideoDto(
+                            existing.getVideoType() == null ? "external" : existing.getVideoType(),
+                            oldVideoUrl,
+                            existing.getVideoLabel()
+                    ));
+                } else {
+                    videos = null;
+                }
+            } else {
+                videos = data.videos();
             }
 
             NewsUpsertRequestDto req = new NewsUpsertRequestDto(
@@ -118,22 +165,27 @@ public class NewsService {
                     data.title(),
                     data.content(),
                     urls,
-                    data.videos(),
+                    videos,
                     data.published()
             );
 
             NewsItemDto out = update(publicId, req);
 
-
-            if (uploaded != null && !uploaded.isEmpty()) {
+            if (!uploadedImages.isEmpty()) {
                 mediaService.deleteManyByPublicUrlsQuietly(oldUrls);
+            }
+
+
+            String newVideoUrl = extractFirstVideoUrl(videos);
+            if (shouldDeleteManagedVideo(oldVideoUrl, newVideoUrl)) {
+                mediaService.deleteByPublicUrlQuietly(oldVideoUrl);
             }
 
             return out;
 
         } catch (RuntimeException ex) {
-
-            mediaService.deleteManyByPublicUrlsQuietly(uploaded);
+            mediaService.deleteManyByPublicUrlsQuietly(uploadedImages);
+            mediaService.deleteByPublicUrlQuietly(uploadedVideo);
             throw ex;
         }
     }
@@ -193,12 +245,15 @@ public class NewsService {
                 .orElseThrow(() -> NotFoundException.of("News", publicId));
 
         List<String> urls = extractImageUrls(n);
+        String videoUrl = n.getVideoUrl();
 
         newsRepository.delete(n);
 
         mediaService.deleteManyByPublicUrlsQuietly(urls);
+        if (mediaService.isManagedPublicUrl(videoUrl)) {
+            mediaService.deleteByPublicUrlQuietly(videoUrl);
+        }
     }
-
 
     public NewsItemDto addImages(UUID publicId, List<MultipartFile> images) {
         if (images == null || images.isEmpty()) {
@@ -310,6 +365,20 @@ public class NewsService {
             }
         }
         return urls;
+    }
+
+
+    private String extractFirstVideoUrl(List<NewsVideoDto> videos) {
+        if (videos == null || videos.isEmpty()) return null;
+        NewsVideoDto first = videos.get(0);
+        return first == null ? null : first.url();
+    }
+
+
+    private boolean shouldDeleteManagedVideo(String oldVideoUrl, String newVideoUrl) {
+        if (!StringUtils.hasText(oldVideoUrl)) return false;
+        if (!mediaService.isManagedPublicUrl(oldVideoUrl)) return false;
+        return !Objects.equals(oldVideoUrl, newVideoUrl);
     }
 
     private static String safeTrim(String s) {

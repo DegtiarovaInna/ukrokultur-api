@@ -31,6 +31,11 @@ public class AboutController {
     public AboutResponseDto getPublic() {
         return aboutService.getPublic();
     }
+    @Operation(summary = "Get about member by id (public)")
+    @GetMapping("/about/members/{id}")
+    public AboutMemberDto getMemberPublic(@PathVariable UUID id) {
+        return aboutService.getMemberPublic(id);
+    }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Get about intro (admin)")

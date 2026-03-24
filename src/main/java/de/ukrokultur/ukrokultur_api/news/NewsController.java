@@ -43,12 +43,18 @@ public class NewsController {
     ) {
         return newsService.getPage(page, pageSize, publishedOnly);
     }
+    @Operation(summary = "Get news by id (public)")
+    @GetMapping("/news/{id}")
+    public NewsItemDto getByIdPublic(@PathVariable UUID id) {
+        return newsService.getByIdPublic(id);
+    }
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Get news by id (admin)")
     @GetMapping("/admin/news/{id}")
     public NewsItemDto getByIdAdmin(@PathVariable UUID id) {
         return newsService.getByIdAdmin(id);
     }
+
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Create news (JSON)")
     @PostMapping(value = "/admin/news", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -61,10 +67,11 @@ public class NewsController {
     @PostMapping(value = "/admin/news/multipart", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public NewsItemDto createMultipart(
             @RequestPart("data") String dataJson,
-            @RequestPart(value = "images", required = false) List<MultipartFile> images
+            @RequestPart(value = "images", required = false) List<MultipartFile> images,
+            @RequestPart(value = "video", required = false) MultipartFile video
     ) {
         NewsUpsertRequestDto data = jsonReader.read(dataJson, NewsUpsertRequestDto.class);
-        return newsService.createMultipart(data, images);
+        return newsService.createMultipart(data, images, video);
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
@@ -80,10 +87,11 @@ public class NewsController {
     public NewsItemDto updateMultipart(
             @PathVariable UUID id,
             @RequestPart("data") String dataJson,
-            @RequestPart(value = "images", required = false) List<MultipartFile> images
+            @RequestPart(value = "images", required = false) List<MultipartFile> images,
+            @RequestPart(value = "video", required = false) MultipartFile video
     ) {
         NewsUpsertRequestDto data = jsonReader.read(dataJson, NewsUpsertRequestDto.class);
-        return newsService.updateMultipart(id, data, images);
+        return newsService.updateMultipart(id, data, images, video);
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
@@ -92,6 +100,7 @@ public class NewsController {
     public void delete(@PathVariable UUID id) {
         newsService.delete(id);
     }
+
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Add images to news gallery (multipart)")
     @PostMapping(value = "/admin/news/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

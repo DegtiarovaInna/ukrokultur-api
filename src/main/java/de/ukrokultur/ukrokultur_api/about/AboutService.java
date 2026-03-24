@@ -44,6 +44,18 @@ public class AboutService {
 
         return new AboutResponseDto(introDto, memberDtos, intro.getUpdatedAt());
     }
+    @Transactional(readOnly = true)
+    public AboutMemberDto getMemberPublic(UUID id) {
+        AboutMember m = memberRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.of("AboutMember", id));
+
+        if (!m.isPublished()) {
+            throw NotFoundException.of("AboutMember", id);
+        }
+
+        return toMemberDto(m);
+    }
+
 
     public AboutIntroDto getIntroAdmin() {
         return toIntroDto(getOrCreateIntro());

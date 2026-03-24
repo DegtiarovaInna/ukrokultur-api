@@ -39,6 +39,11 @@ public class ProjectController {
     ) {
         return service.getPage(page, pageSize, publishedOnly);
     }
+    @Operation(summary = "Get project by id (public)")
+    @GetMapping("/projects/{id}")
+    public ProjectItemDto getByIdPublic(@PathVariable UUID id) {
+        return service.getByIdPublic(id);
+    }
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Get project by id (admin)")
     @GetMapping("/admin/projects/{id}")
