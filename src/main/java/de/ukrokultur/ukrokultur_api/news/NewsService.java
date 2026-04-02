@@ -10,20 +10,30 @@ import de.ukrokultur.ukrokultur_api.common.exception.ApiException;
 import de.ukrokultur.ukrokultur_api.common.exception.NotFoundException;
 import de.ukrokultur.ukrokultur_api.common.slug.SlugGenerator;
 import de.ukrokultur.ukrokultur_api.media.MediaService;
-import org.springframework.data.domain.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.ZoneOffset;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Predicate;
 
 @Service
 @Transactional
 public class NewsService {
+
+    private static final long MAX_IMAGE_SIZE_BYTES = 10L * 1024 * 1024;
+    private static final long MAX_VIDEO_SIZE_BYTES = 30L * 1024 * 1024;
 
     private final NewsRepository newsRepository;
     private final MediaService mediaService;
@@ -51,6 +61,7 @@ public class NewsService {
                 p.getTotalPages()
         );
     }
+
     @Transactional(readOnly = true)
     public NewsItemDto getByIdPublic(UUID publicId) {
         News n = newsRepository.findByPublicId(publicId)
@@ -62,6 +73,7 @@ public class NewsService {
 
         return toItemDto(n);
     }
+
     @Transactional(readOnly = true)
     public NewsItemDto getByIdAdmin(UUID publicId) {
         News n = newsRepository.findByPublicId(publicId)
@@ -70,6 +82,9 @@ public class NewsService {
     }
 
     public NewsItemDto createMultipart(NewsUpsertRequestDto data, List<MultipartFile> images, MultipartFile video) {
+        validateImageFiles(images);
+        validateVideoFile(video);
+
         List<String> uploadedImages = List.of();
         String uploadedVideo = null;
 
@@ -78,7 +93,9 @@ public class NewsService {
 
             if (images != null && !images.isEmpty()) {
                 uploadedImages = mediaService.uploadMany(images, "news")
-                        .stream().map(x -> x.publicUrl()).toList();
+                        .stream()
+                        .map(x -> x.publicUrl())
+                        .toList();
                 urls = uploadedImages;
             }
 
@@ -115,6 +132,10 @@ public class NewsService {
     }
 
     public NewsItemDto updateMultipart(UUID publicId, NewsUpsertRequestDto data, List<MultipartFile> images, MultipartFile video) {
+
+        validateImageFiles(images);
+        validateVideoFile(video);
+
         News existing = newsRepository.findByPublicId(publicId)
                 .orElseThrow(() -> NotFoundException.of("News", publicId));
 
@@ -129,10 +150,11 @@ public class NewsService {
 
             if (images != null && !images.isEmpty()) {
                 uploadedImages = mediaService.uploadMany(images, "news")
-                        .stream().map(x -> x.publicUrl()).toList();
+                        .stream()
+                        .map(x -> x.publicUrl())
+                        .toList();
                 urls = uploadedImages;
             }
-
 
             List<NewsVideoDto> videos;
             if (video != null && !video.isEmpty()) {
@@ -175,7 +197,6 @@ public class NewsService {
                 mediaService.deleteManyByPublicUrlsQuietly(oldUrls);
             }
 
-
             String newVideoUrl = extractFirstVideoUrl(videos);
             if (shouldDeleteManagedVideo(oldVideoUrl, newVideoUrl)) {
                 mediaService.deleteByPublicUrlQuietly(oldVideoUrl);
@@ -193,7 +214,8 @@ public class NewsService {
     public NewsItemDto create(NewsUpsertRequestDto req) {
         News n = new News();
 
-        applyUpsert(n, req);
+
+        applyUpsert(n, req, false);
 
         String requested = safeTrim(req.slug());
         if (StringUtils.hasText(requested)) {
@@ -231,7 +253,8 @@ public class NewsService {
             n.setSlug(normalized);
         }
 
-        applyUpsert(n, req);
+
+        applyUpsert(n, req, true);
 
         if (!StringUtils.hasText(n.getSlug())) {
             ensureSlug(n, req);
@@ -256,6 +279,9 @@ public class NewsService {
     }
 
     public NewsItemDto addImages(UUID publicId, List<MultipartFile> images) {
+
+        validateImageFiles(images);
+
         if (images == null || images.isEmpty()) {
             throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "images are required");
         }
@@ -267,7 +293,9 @@ public class NewsService {
                     .orElseThrow(() -> NotFoundException.of("News", publicId));
 
             uploaded = mediaService.uploadMany(images, "news")
-                    .stream().map(x -> x.publicUrl()).toList();
+                    .stream()
+                    .map(x -> x.publicUrl())
+                    .toList();
 
             int startOrder = n.getImages().size();
 
@@ -302,7 +330,6 @@ public class NewsService {
         }
 
         normalizeNewsImages(n);
-
         mediaService.deleteByPublicUrlQuietly(url);
 
         return toItemDto(n);
@@ -328,6 +355,7 @@ public class NewsService {
                 throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Unknown url in order list: " + u);
             }
         }
+
         if (urls.size() != byUrl.size()) {
             throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "Order list must contain all existing image urls");
         }
@@ -367,27 +395,35 @@ public class NewsService {
         return urls;
     }
 
-
     private String extractFirstVideoUrl(List<NewsVideoDto> videos) {
-        if (videos == null || videos.isEmpty()) return null;
+        if (videos == null || videos.isEmpty()) {
+            return null;
+        }
         NewsVideoDto first = videos.get(0);
         return first == null ? null : first.url();
     }
 
-
     private boolean shouldDeleteManagedVideo(String oldVideoUrl, String newVideoUrl) {
-        if (!StringUtils.hasText(oldVideoUrl)) return false;
-        if (!mediaService.isManagedPublicUrl(oldVideoUrl)) return false;
+        if (!StringUtils.hasText(oldVideoUrl)) {
+            return false;
+        }
+        if (!mediaService.isManagedPublicUrl(oldVideoUrl)) {
+            return false;
+        }
         return !Objects.equals(oldVideoUrl, newVideoUrl);
     }
 
     private static String safeTrim(String s) {
-        if (!StringUtils.hasText(s)) return null;
+        if (!StringUtils.hasText(s)) {
+            return null;
+        }
         return s.trim();
     }
 
     private void ensureSlug(News n, NewsUpsertRequestDto req) {
-        if (StringUtils.hasText(n.getSlug())) return;
+        if (StringUtils.hasText(n.getSlug())) {
+            return;
+        }
 
         String base = firstNonBlank(req.title().de(), req.title().en(), req.title().uk());
         Predicate<String> exists = newsRepository::existsBySlug;
@@ -396,20 +432,30 @@ public class NewsService {
     }
 
     private static String firstNonBlank(String... values) {
-        if (values == null) return "item";
+        if (values == null) {
+            return "item";
+        }
         for (String v : values) {
-            if (v != null && !v.isBlank()) return v;
+            if (v != null && !v.isBlank()) {
+                return v;
+            }
         }
         return "item";
     }
 
-    private void applyUpsert(News n, NewsUpsertRequestDto req) {
+    private void applyUpsert(News n, NewsUpsertRequestDto req, boolean preserveExistingVideoWhenMissing) {
         n.setPublished(Boolean.TRUE.equals(req.published()));
         n.setEventDate(req.eventDate());
-
         n.setPublishedAt(req.newsDate().atStartOfDay().atOffset(ZoneOffset.UTC));
 
-        if (req.videos() != null && !req.videos().isEmpty()) {
+
+        if (req.videos() == null) {
+            if (!preserveExistingVideoWhenMissing) {
+                n.setVideoType(null);
+                n.setVideoUrl(null);
+                n.setVideoLabel(null);
+            }
+        } else if (!req.videos().isEmpty()) {
             NewsVideoDto v = req.videos().get(0);
             n.setVideoType(v.type());
             n.setVideoUrl(v.url());
@@ -428,7 +474,9 @@ public class NewsService {
         if (req.images() != null && !req.images().isEmpty()) {
             int order = 0;
             for (String url : req.images()) {
-                if (!StringUtils.hasText(url)) continue;
+                if (!StringUtils.hasText(url)) {
+                    continue;
+                }
                 NewsImage img = new NewsImage();
                 img.setUrl(url);
                 img.setSortOrder(order);
@@ -436,6 +484,41 @@ public class NewsService {
                 n.addImage(img);
                 order++;
             }
+        }
+    }
+
+
+    private void validateImageFiles(List<MultipartFile> images) {
+        if (images == null || images.isEmpty()) {
+            return;
+        }
+
+        for (MultipartFile image : images) {
+            if (image == null || image.isEmpty()) {
+                continue;
+            }
+            if (image.getSize() > MAX_IMAGE_SIZE_BYTES) {
+                throw new ApiException(
+                        400,
+                        ErrorCode.VALIDATION_ERROR,
+                        "Each image must be <= 10 MB"
+                );
+            }
+        }
+    }
+
+
+    private void validateVideoFile(MultipartFile video) {
+        if (video == null || video.isEmpty()) {
+            return;
+        }
+
+        if (video.getSize() > MAX_VIDEO_SIZE_BYTES) {
+            throw new ApiException(
+                    400,
+                    ErrorCode.VALIDATION_ERROR,
+                    "Video must be <= 30 MB"
+            );
         }
     }
 
@@ -461,14 +544,27 @@ public class NewsService {
     }
 
     private NewsItemDto toItemDto(News n) {
-        String enTitle = null, deTitle = null, ukTitle = null;
-        String enText = null, deText = null, ukText = null;
+        String enTitle = null;
+        String deTitle = null;
+        String ukTitle = null;
+        String enText = null;
+        String deText = null;
+        String ukText = null;
 
         for (NewsTranslation t : n.getTranslations()) {
             switch (t.getLang()) {
-                case "en" -> { enTitle = t.getTitle(); enText = t.getText(); }
-                case "de" -> { deTitle = t.getTitle(); deText = t.getText(); }
-                case "uk" -> { ukTitle = t.getTitle(); ukText = t.getText(); }
+                case "en" -> {
+                    enTitle = t.getTitle();
+                    enText = t.getText();
+                }
+                case "de" -> {
+                    deTitle = t.getTitle();
+                    deText = t.getText();
+                }
+                case "uk" -> {
+                    ukTitle = t.getTitle();
+                    ukText = t.getText();
+                }
             }
         }
 
