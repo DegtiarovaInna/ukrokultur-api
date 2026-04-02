@@ -43,11 +43,13 @@ public class NewsController {
     ) {
         return newsService.getPage(page, pageSize, publishedOnly);
     }
+
     @Operation(summary = "Get news by id (public)")
     @GetMapping("/news/{id}")
     public NewsItemDto getByIdPublic(@PathVariable UUID id) {
         return newsService.getByIdPublic(id);
     }
+
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
     @Operation(summary = "Get news by id (admin)")
     @GetMapping("/admin/news/{id}")
@@ -63,7 +65,15 @@ public class NewsController {
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @Operation(summary = "Create news (multipart)")
+    @Operation(
+            summary = "Create news (multipart)",
+            description = """
+                    Upload limits:
+                    - each image <= 10 MB
+                    - video <= 30 MB
+                    - total multipart request <= 50 MB
+                    """
+    )
     @PostMapping(value = "/admin/news/multipart", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public NewsItemDto createMultipart(
             @RequestPart("data") String dataJson,
@@ -75,14 +85,35 @@ public class NewsController {
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @Operation(summary = "Update news (JSON)")
+    @Operation(
+            summary = "Update news (JSON)",
+            description = """
+                    Video behavior for JSON PUT:
+                    - if field videos is absent -> keep current video
+                    - if videos is [] -> remove current video
+                    - if videos contains a value -> replace current video
+                    """
+    )
     @PutMapping(value = "/admin/news/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public NewsItemDto update(@PathVariable UUID id, @RequestBody @Valid NewsUpsertRequestDto req) {
         return newsService.update(id, req);
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @Operation(summary = "Update news (multipart)")
+    @Operation(
+            summary = "Update news (multipart)",
+            description = """
+                    Upload limits:
+                    - each image <= 10 MB
+                    - video <= 30 MB
+                    - total multipart request <= 50 MB
+
+                    Video behavior for multipart PUT:
+                    - if part video is absent and data.videos is absent -> keep current video
+                    - if part video is absent and data.videos is [] -> remove current video
+                    - if part video is provided -> replace current video with uploaded file
+                    """
+    )
     @PutMapping(value = "/admin/news/{id}/multipart", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public NewsItemDto updateMultipart(
             @PathVariable UUID id,
@@ -102,7 +133,10 @@ public class NewsController {
     }
 
     @SecurityRequirement(name = OpenApiConfig.BEARER_SCHEME_NAME)
-    @Operation(summary = "Add images to news gallery (multipart)")
+    @Operation(
+            summary = "Add images to news gallery (multipart)",
+            description = "Each image must be <= 10 MB."
+    )
     @PostMapping(value = "/admin/news/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public NewsItemDto addImages(
             @PathVariable UUID id,

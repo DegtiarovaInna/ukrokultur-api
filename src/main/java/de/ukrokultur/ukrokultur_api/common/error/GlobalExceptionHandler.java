@@ -13,6 +13,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
@@ -90,6 +91,19 @@ public class GlobalExceptionHandler {
                 null
         );
         return ResponseEntity.status(403).body(body);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiError> handleMaxUploadSize(MaxUploadSizeExceededException ex, HttpServletRequest req) {
+        ApiError body = ApiError.of(
+                400,
+                "Bad Request",
+                ErrorCode.VALIDATION_ERROR,
+                "Upload is too large. Images must be <= 10 MB each. Video must be <= 30 MB. Total multipart request must be <= 50 MB.",
+                req.getRequestURI(),
+                null
+        );
+        return ResponseEntity.badRequest().body(body);
     }
 
     @ExceptionHandler({
