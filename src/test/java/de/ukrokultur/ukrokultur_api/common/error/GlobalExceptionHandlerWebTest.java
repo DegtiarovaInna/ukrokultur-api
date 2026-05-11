@@ -17,9 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(controllers = GlobalExceptionHandlerWebTest.TestController.class)
@@ -80,7 +78,11 @@ class GlobalExceptionHandlerWebTest {
 
     static class TestDto {
 
-        @NotBlank(message = "name must not be blank")
+        // Важно:
+        // message специально не задаём.
+        // Так тест проверяет нашу реальную проблему:
+        // стандартное сообщение Hibernate Validator больше не должно приходить на русском.
+        @NotBlank
         private String name;
 
         public String getName() {
@@ -92,10 +94,8 @@ class GlobalExceptionHandlerWebTest {
         }
     }
 
-
-
     @Test
-    void validation_returns400_withFieldErrors() throws Exception {
+    void validation_returns400_withFieldErrorsInEnglish() throws Exception {
         mvc.perform(post("/test/validation")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"\"}"))
@@ -107,7 +107,12 @@ class GlobalExceptionHandlerWebTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.message").value("Validation failed"))
                 .andExpect(jsonPath("$.path").value("/test/validation"))
-                .andExpect(jsonPath("$.fieldErrors.name").value("name must not be blank"));
+
+                // FIX:
+                // Раньше тест ждал "name must not be blank".
+                // После фикса GlobalExceptionHandler сам возвращает английский текст:
+                // field + " is required".
+                .andExpect(jsonPath("$.fieldErrors.name").value("name is required"));
     }
 
     @Test

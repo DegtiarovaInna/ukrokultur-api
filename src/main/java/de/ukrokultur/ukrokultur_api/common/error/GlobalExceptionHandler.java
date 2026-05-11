@@ -23,13 +23,12 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();
 
         for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
-            fieldErrors.putIfAbsent(fe.getField(), fe.getDefaultMessage());
+            fieldErrors.putIfAbsent(fe.getField(), toEnglishValidationMessage(fe));
         }
 
         ApiError body = ApiError.of(
@@ -40,6 +39,7 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 fieldErrors
         );
+
         return ResponseEntity.badRequest().body(body);
     }
 
@@ -53,6 +53,7 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 ex.getFieldErrors()
         );
+
         return ResponseEntity.status(ex.getStatus()).body(body);
     }
 
@@ -66,6 +67,7 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 null
         );
+
         return ResponseEntity.status(ex.getStatus()).body(body);
     }
 
@@ -79,6 +81,7 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 null
         );
+
         return ResponseEntity.status(401).body(body);
     }
 
@@ -92,6 +95,7 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 null
         );
+
         return ResponseEntity.status(403).body(body);
     }
 
@@ -101,10 +105,11 @@ public class GlobalExceptionHandler {
                 400,
                 "Bad Request",
                 ErrorCode.VALIDATION_ERROR,
-                "Upload is too large. Images must be <= 10 MB each. Video must be <= 30 MB. Total multipart request must be <= 50 MB.",
+                "Upload is too large. Images must be <= 10 MB each. Video must be <= 25 MB. One multipart file must be <= 30 MB. Total multipart request must be <= 50 MB.",
                 req.getRequestURI(),
                 null
         );
+
         return ResponseEntity.badRequest().body(body);
     }
 
@@ -122,6 +127,7 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 null
         );
+
         return ResponseEntity.badRequest().body(body);
     }
 
@@ -135,6 +141,7 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 null
         );
+
         return ResponseEntity.status(415).body(body);
     }
 
@@ -148,6 +155,55 @@ public class GlobalExceptionHandler {
                 req.getRequestURI(),
                 null
         );
+
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+    }
+
+    private String toEnglishValidationMessage(FieldError fe) {
+        String field = fe.getField();
+
+        if (hasCode(fe, "NotNull")) {
+            return field + " is required";
+        }
+
+        if (hasCode(fe, "NotBlank")) {
+            return field + " is required";
+        }
+
+        if (hasCode(fe, "NotEmpty")) {
+            return field + " must not be empty";
+        }
+
+        if (hasCode(fe, "Email")) {
+            return field + " must be a valid email address";
+        }
+
+        if (hasCode(fe, "Size")) {
+            return field + " has invalid length";
+        }
+
+        if (hasCode(fe, "Pattern")) {
+            return field + " has invalid format";
+        }
+
+        if (hasCode(fe, "AssertTrue")) {
+            return field + " must be accepted";
+        }
+
+        return "Invalid value";
+    }
+
+    private boolean hasCode(FieldError fe, String code) {
+        if (fe.getCodes() == null) {
+            return false;
+        }
+
+        for (String c : fe.getCodes()) {
+            if (c != null && c.startsWith(code)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

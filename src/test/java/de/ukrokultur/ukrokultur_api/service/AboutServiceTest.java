@@ -20,7 +20,6 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-
 class AboutServiceTest {
 
     AboutIntroRepository introRepo = mock(AboutIntroRepository.class);
@@ -38,19 +37,23 @@ class AboutServiceTest {
     void updateIntroMultipart_withFile_deletesOldAfterSuccess() {
         AboutIntro intro = new AboutIntro();
         intro.setImage("old-url");
-        intro.setTitle(new I18nEmbeddable("a","a","a"));
-        intro.setText(new I18nEmbeddable("b","b","b"));
+        intro.setTitle(new I18nEmbeddable("a", "a", "a"));
+        intro.setText(new I18nEmbeddable("b", "b", "b"));
         intro.setPublished(true);
 
-        when(introRepo.findAll()).thenReturn(List.of(intro));
+        // FIX:
+        // AboutService сейчас получает intro через findTopByOrderByUpdatedAtDesc(),
+        // а не через findAll(). Поэтому мок должен повторять реальный вызов сервиса.
+        when(introRepo.findTopByOrderByUpdatedAtDesc()).thenReturn(Optional.of(intro));
+        when(introRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        var uploadRes = new de.ukrokultur.ukrokultur_api.common.dto.media.UploadResponseDto("x", "new-url");
+        var uploadRes = new UploadResponseDto("x", "new-url");
         when(mediaService.upload(any(), eq("about"))).thenReturn(uploadRes);
 
         var data = new AboutIntroUpsertRequestDto(
                 null,
-                new I18nText("t1","t2","t3"),
-                new I18nText("x1","x2","x3"),
+                new I18nText("t1", "t2", "t3"),
+                new I18nText("x1", "x2", "x3"),
                 true
         );
 
@@ -59,40 +62,42 @@ class AboutServiceTest {
         service.updateIntroMultipart(data, file);
 
         verify(mediaService).deleteByPublicUrlQuietly("old-url");
-        verify(mediaService, never()).deleteByPublicUrlQuietly("new-url"); // новый не удаляем при success
+        verify(mediaService, never()).deleteByPublicUrlQuietly("new-url");
     }
 
     @Test
     void updateIntroMultipart_whenUpdateThrows_deletesUploaded_only() {
         AboutIntro intro = new AboutIntro();
         intro.setImage("old-url");
-        intro.setTitle(new I18nEmbeddable("a","a","a"));
-        intro.setText(new I18nEmbeddable("b","b","b"));
+        intro.setTitle(new I18nEmbeddable("a", "a", "a"));
+        intro.setText(new I18nEmbeddable("b", "b", "b"));
         intro.setPublished(true);
 
-        when(introRepo.findAll()).thenReturn(List.of(intro));
+        // FIX:
+        // То же исправление: мокируем именно тот метод, который реально вызывает AboutService.
+        when(introRepo.findTopByOrderByUpdatedAtDesc()).thenReturn(Optional.of(intro));
 
-        var uploadRes = new de.ukrokultur.ukrokultur_api.common.dto.media.UploadResponseDto("x", "new-url");
+        var uploadRes = new UploadResponseDto("x", "new-url");
         when(mediaService.upload(any(), eq("about"))).thenReturn(uploadRes);
 
         when(introRepo.save(any())).thenThrow(new RuntimeException("db down"));
 
         var data = new AboutIntroUpsertRequestDto(
                 null,
-                new I18nText("t1","t2","t3"),
-                new I18nText("x1","x2","x3"),
+                new I18nText("t1", "t2", "t3"),
+                new I18nText("x1", "x2", "x3"),
                 true
         );
 
         var file = new MockMultipartFile("image", "a.png", "image/png", "png".getBytes());
 
-        try {
-            service.updateIntroMultipart(data, file);
-        } catch (RuntimeException ignored) {}
+        assertThatThrownBy(() -> service.updateIntroMultipart(data, file))
+                .isInstanceOf(RuntimeException.class);
 
         verify(mediaService).deleteByPublicUrlQuietly("new-url");
         verify(mediaService, never()).deleteByPublicUrlQuietly("old-url");
     }
+
     @Test
     void createMember_setsSortOrderMaxPlusOne() {
         when(memberRepo.findMaxSortOrder()).thenReturn(5);
@@ -112,12 +117,11 @@ class AboutServiceTest {
 
         service.createMember(req);
 
-
         var captor = org.mockito.ArgumentCaptor.forClass(AboutMember.class);
         verify(memberRepo).save(captor.capture());
+
         assertThat(captor.getValue().getSortOrder()).isEqualTo(6);
     }
-
 
     @Test
     void updateMember_withOrder_movesAndRecalculatesSortOrder() {
@@ -129,15 +133,12 @@ class AboutServiceTest {
         AboutMember b = baseMember("b", 1);
         AboutMember c = baseMember("c", 2);
 
-        setId(b, idB);
         setId(a, idA);
+        setId(b, idB);
         setId(c, idC);
 
         when(memberRepo.findById(idB)).thenReturn(Optional.of(b));
-
-
         when(memberRepo.findAllOrdered()).thenReturn(new ArrayList<>(List.of(a, b, c)));
-
         when(memberRepo.existsBySlug(anyString())).thenReturn(false);
         when(memberRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(memberRepo.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -158,21 +159,12 @@ class AboutServiceTest {
         var saveAllCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
         verify(memberRepo).saveAll(saveAllCaptor.capture());
 
-
         List<AboutMember> saved = saveAllCaptor.getValue();
 
         assertThat(saved).extracting(AboutMember::getSlug).containsExactly("b", "a", "c");
         assertThat(saved).extracting(AboutMember::getSortOrder).containsExactly(0, 1, 2);
     }
-    private static void setId(AboutMember m, UUID id) {
-        try {
-            Field f = AboutMember.class.getDeclaredField("id");
-            f.setAccessible(true);
-            f.set(m, id);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
+
     @Test
     void createMemberMultipart_whenSaveThrows_deletesUploaded() {
         when(memberRepo.findMaxSortOrder()).thenReturn(-1);
@@ -202,6 +194,16 @@ class AboutServiceTest {
         verify(mediaService).deleteByPublicUrlQuietly("new-url");
     }
 
+    private static void setId(AboutMember m, UUID id) {
+        try {
+            Field f = AboutMember.class.getDeclaredField("id");
+            f.setAccessible(true);
+            f.set(m, id);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private static AboutMember baseMember(String slug, int sort) {
         AboutMember m = new AboutMember();
         m.setSlug(slug);
@@ -212,6 +214,7 @@ class AboutServiceTest {
         m.setInstagramUrl(null);
         m.setRole(new I18nEmbeddable("r", "r", "r"));
         m.setBiography(new I18nEmbeddable("b", "b", "b"));
+
         return m;
     }
 }
