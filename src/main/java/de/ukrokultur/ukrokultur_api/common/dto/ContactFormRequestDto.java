@@ -1,33 +1,54 @@
 package de.ukrokultur.ukrokultur_api.common.dto;
 
-import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record ContactFormRequestDto(
-        @NotBlank
-        @Size(max = 100)
+
+        @NotBlank(message = "First name is required")
+        @Size(max = 100, message = "First name must be <= 100 characters")
         String firstName,
-        @NotBlank
-        @Size(max = 100)
+
+
+        @NotBlank(message = "Last name is required")
+        @Size(max = 100, message = "Last name must be <= 100 characters")
         String lastName,
-        @Email @NotBlank
-        @Size(max = 255)
+
+
+        @NotBlank(message = "Email is required")
+        @Size(max = 255, message = "Email must be <= 255 characters")
+        @Pattern(
+                regexp = "^$|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,63}$",
+                message = "Email must be a valid ASCII email address"
+        )
         String email,
-        @NotBlank
-        @Size(max = 50)
+
+
+        @NotBlank(message = "Phone is required")
+        @Size(max = 50, message = "Phone must be <= 50 characters")
         String phone,
-        @NotBlank
-        @Size(max = 5000)
+
+
+        @NotBlank(message = "Message is required")
+        @Size(max = 5000, message = "Message must be <= 5000 characters")
         String message,
 
-        @NotNull Boolean privacyPolicyAccepted,
-        @NotBlank
-        @Size(max = 50)
+
+        @NotNull(message = "Privacy policy acceptance is required")
+        @AssertTrue(message = "Privacy policy must be accepted")
+        Boolean privacyPolicyAccepted,
+
+
+        @NotBlank(message = "Privacy policy version is required")
+        @Size(max = 50, message = "Privacy policy version must be <= 50 characters")
         String privacyPolicyVersion,
 
-        @NotBlank
-        @Size(max = 2000)
+        @NotBlank(message = "hCaptcha token is required")
+        @Size(max = 2000, message = "hCaptcha token must be <= 2000 characters")
         String hcaptchaToken
-) {}
+
+) {
+}
