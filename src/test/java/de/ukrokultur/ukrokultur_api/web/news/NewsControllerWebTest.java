@@ -19,7 +19,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
-
+import de.ukrokultur.ukrokultur_api.common.error.ValidationMessageResolver;
+import org.springframework.context.annotation.Import;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -28,7 +29,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-
+@Import(ValidationMessageResolver.class)
 @WebMvcTest(NewsController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class NewsControllerWebTest {

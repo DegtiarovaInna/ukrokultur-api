@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class MediaService {
@@ -49,7 +50,6 @@ public class MediaService {
         }
 
         String safeFolder = normalizeFolder(folder);
-
 
         validateFile(file);
 
@@ -359,24 +359,44 @@ public class MediaService {
     }
 
     public String buildObjectPath(String originalFileName, String folder) {
-        String safeName = sanitizeFilename(originalFileName);
+        String safeName = buildSafeStorageFilename(originalFileName);
         String ts = String.valueOf(Instant.now().toEpochMilli());
 
         return folder + "/" + ts + "_" + safeName;
     }
 
-    private String sanitizeFilename(String originalFileName) {
-        String name = originalFileName == null ? "file" : originalFileName.trim();
+    private String buildSafeStorageFilename(String originalFileName) {
+        String extension = extractSafeExtension(originalFileName);
+        String randomName = UUID.randomUUID().toString().replace("-", "");
 
-        name = name.replaceAll("\\s+", "_");
-        name = name.replace("\\", "_").replace("/", "_");
-        name = name.replace("..", "_");
+        return randomName + extension;
+    }
 
-        if (!StringUtils.hasText(name)) {
-            return "file";
+    private String extractSafeExtension(String originalFileName) {
+        if (!StringUtils.hasText(originalFileName)) {
+            return "";
         }
 
-        return name;
+        String name = originalFileName.trim();
+        name = name.replace("\\", "/");
+
+        int slashIndex = name.lastIndexOf("/");
+        if (slashIndex >= 0) {
+            name = name.substring(slashIndex + 1);
+        }
+
+        int dotIndex = name.lastIndexOf(".");
+        if (dotIndex < 0 || dotIndex == name.length() - 1) {
+            return "";
+        }
+
+        String extension = name.substring(dotIndex + 1).toLowerCase();
+
+        if (!extension.matches("[a-z0-9]{1,10}")) {
+            return "";
+        }
+
+        return "." + extension;
     }
 
     public String buildPublicUrl(String objectPath) {

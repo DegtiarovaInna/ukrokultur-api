@@ -28,7 +28,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
+import de.ukrokultur.ukrokultur_api.common.error.ValidationMessageResolver;
+import org.springframework.context.annotation.Import;
+@Import(ValidationMessageResolver.class)
 @WebMvcTest(
         controllers = AboutController.class,
         excludeFilters = @ComponentScan.Filter(

@@ -24,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(addFilters = false)
 @Import({
         GlobalExceptionHandler.class,
+        ValidationMessageResolver.class,
         GlobalExceptionHandlerWebTest.TestController.class
 })
 class GlobalExceptionHandlerWebTest {
