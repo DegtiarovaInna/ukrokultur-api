@@ -20,15 +20,34 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.UUID;
+import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class MediaService {
 
     private static final Logger log = LoggerFactory.getLogger(MediaService.class);
 
-    private static final long MAX_IMAGE_SIZE_BYTES = 10L * 1024 * 1024; // 10 MB
-    private static final long MAX_VIDEO_SIZE_BYTES = 25L * 1024 * 1024; // 25 MB
+    private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "video/mp4",
+            "video/webm",
+            "video/quicktime"
+    );
+
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+            "jpg",
+            "jpeg",
+            "png",
+            "webp",
+            "gif",
+            "mp4",
+            "webm",
+            "mov"
+    );
 
     private final SupabaseProperties props;
     private final RestClient restClient;
@@ -49,16 +68,14 @@ public class MediaService {
             throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "File is required");
         }
 
+        validateAllowedFile(file);
+
         String safeFolder = normalizeFolder(folder);
-
-        validateFile(file);
-
         String objectPath = buildObjectPath(file.getOriginalFilename(), safeFolder);
 
         putToStorage(objectPath, file);
 
         String publicUrl = buildPublicUrl(objectPath);
-
         return new UploadResponseDto(objectPath, publicUrl);
     }
 
@@ -93,7 +110,11 @@ public class MediaService {
             throw new ApiException(400, ErrorCode.VALIDATION_ERROR, "objectPath is required");
         }
 
-        String deleteUrl = props.url() + "/storage/v1/object/" + props.bucket() + "/" + encodePath(objectPath);
+        String deleteUrl = props.url()
+                + "/storage/v1/object/"
+                + props.bucket()
+                + "/"
+                + encodePath(objectPath);
 
         try {
             restClient.delete()
@@ -104,7 +125,6 @@ public class MediaService {
                     .toBodilessEntity();
         } catch (Exception ex) {
             log.error("Failed to delete file from Supabase Storage. objectPath={}", objectPath, ex);
-
             throw new ApiException(502, ErrorCode.INTERNAL_ERROR, "Failed to delete file from storage");
         }
     }
@@ -165,21 +185,19 @@ public class MediaService {
                 }
 
                 tail = stripQuery(tail);
-                tail = tail.isBlank() ? null : decodePath(tail);
-
-                return tail;
+                return tail.isBlank() ? null : decodePath(tail);
             }
         }
 
-        String prefix = props.url().trim() + "/storage/v1/object/public/" + props.bucket() + "/";
+        String prefix = props.url().trim()
+                + "/storage/v1/object/public/"
+                + props.bucket()
+                + "/";
 
         if (url.startsWith(prefix)) {
             String tail = url.substring(prefix.length());
-
             tail = stripQuery(tail);
-            tail = tail.isBlank() ? null : decodePath(tail);
-
-            return tail;
+            return tail.isBlank() ? null : decodePath(tail);
         }
 
         try {
@@ -196,18 +214,13 @@ public class MediaService {
                         tail = tail.substring(1);
                     }
 
-                    tail = tail.isBlank() ? null : decodePath(tail);
-
-                    return tail;
+                    return tail.isBlank() ? null : decodePath(tail);
                 }
             }
 
             if (noQuery.startsWith(prefix)) {
                 String tail = noQuery.substring(prefix.length());
-
-                tail = tail.isBlank() ? null : decodePath(tail);
-
-                return tail;
+                return tail.isBlank() ? null : decodePath(tail);
             }
         } catch (Exception ignore) {
         }
@@ -221,7 +234,6 @@ public class MediaService {
         }
 
         int idx = s.indexOf('?');
-
         return idx >= 0 ? s.substring(0, idx) : s;
     }
 
@@ -245,13 +257,17 @@ public class MediaService {
     }
 
     private void putToStorage(String objectPath, MultipartFile file) {
-        String uploadUrl = props.url() + "/storage/v1/object/" + props.bucket() + "/" + encodePath(objectPath);
+        String uploadUrl = props.url()
+                + "/storage/v1/object/"
+                + props.bucket()
+                + "/"
+                + encodePath(objectPath);
 
         try {
             byte[] bytes = file.getBytes();
 
             String contentType = StringUtils.hasText(file.getContentType())
-                    ? file.getContentType()
+                    ? normalizeContentType(file.getContentType())
                     : MediaType.APPLICATION_OCTET_STREAM_VALUE;
 
             restClient.put()
@@ -284,57 +300,8 @@ public class MediaService {
         }
     }
 
-    private void validateFile(MultipartFile file) {
-        String contentType = file.getContentType();
-
-        if (!StringUtils.hasText(contentType)) {
-            throw new ApiException(
-                    400,
-                    ErrorCode.VALIDATION_ERROR,
-                    "File content type is required"
-            );
-        }
-
-        String normalizedContentType = contentType.toLowerCase();
-
-        if (isImage(normalizedContentType)) {
-            validateSize(file, MAX_IMAGE_SIZE_BYTES, "Image must be <= 10 MB");
-            return;
-        }
-
-        if (isVideo(normalizedContentType)) {
-            validateSize(file, MAX_VIDEO_SIZE_BYTES, "Video must be <= 25 MB");
-            return;
-        }
-
-        throw new ApiException(
-                400,
-                ErrorCode.VALIDATION_ERROR,
-                "Unsupported file type. Allowed images: JPEG, PNG, WEBP, GIF. Allowed videos: MP4, WEBM, MOV"
-        );
-    }
-
-    private void validateSize(MultipartFile file, long maxSizeBytes, String message) {
-        if (file.getSize() > maxSizeBytes) {
-            throw new ApiException(400, ErrorCode.VALIDATION_ERROR, message);
-        }
-    }
-
-    private boolean isImage(String contentType) {
-        return contentType.equals("image/jpeg")
-                || contentType.equals("image/png")
-                || contentType.equals("image/webp")
-                || contentType.equals("image/gif");
-    }
-
-    private boolean isVideo(String contentType) {
-        return contentType.equals("video/mp4")
-                || contentType.equals("video/webm")
-                || contentType.equals("video/quicktime");
-    }
-
     private String normalizeFolder(String folder) {
-        String f = folder == null ? "" : folder.trim().toLowerCase();
+        String f = (folder == null ? "" : folder.trim().toLowerCase(Locale.ROOT));
 
         return switch (f) {
             case "news", "projects", "about", "home", "pages" -> f;
@@ -359,44 +326,24 @@ public class MediaService {
     }
 
     public String buildObjectPath(String originalFileName, String folder) {
-        String safeName = buildSafeStorageFilename(originalFileName);
+        String safeName = sanitizeFilename(originalFileName);
         String ts = String.valueOf(Instant.now().toEpochMilli());
 
         return folder + "/" + ts + "_" + safeName;
     }
 
-    private String buildSafeStorageFilename(String originalFileName) {
-        String extension = extractSafeExtension(originalFileName);
-        String randomName = UUID.randomUUID().toString().replace("-", "");
+    private String sanitizeFilename(String originalFileName) {
+        String name = (originalFileName == null ? "file" : originalFileName).trim();
 
-        return randomName + extension;
-    }
+        name = name.replaceAll("\\s+", "_");
+        name = name.replace("\\", "_").replace("/", "_");
+        name = name.replace("..", "_");
 
-    private String extractSafeExtension(String originalFileName) {
-        if (!StringUtils.hasText(originalFileName)) {
-            return "";
+        if (!StringUtils.hasText(name)) {
+            return "file";
         }
 
-        String name = originalFileName.trim();
-        name = name.replace("\\", "/");
-
-        int slashIndex = name.lastIndexOf("/");
-        if (slashIndex >= 0) {
-            name = name.substring(slashIndex + 1);
-        }
-
-        int dotIndex = name.lastIndexOf(".");
-        if (dotIndex < 0 || dotIndex == name.length() - 1) {
-            return "";
-        }
-
-        String extension = name.substring(dotIndex + 1).toLowerCase();
-
-        if (!extension.matches("[a-z0-9]{1,10}")) {
-            return "";
-        }
-
-        return "." + extension;
+        return name;
     }
 
     public String buildPublicUrl(String objectPath) {
@@ -404,7 +351,11 @@ public class MediaService {
             return props.publicBaseUrl() + "/" + encodePath(objectPath);
         }
 
-        return props.url() + "/storage/v1/object/public/" + props.bucket() + "/" + encodePath(objectPath);
+        return props.url()
+                + "/storage/v1/object/public/"
+                + props.bucket()
+                + "/"
+                + encodePath(objectPath);
     }
 
     private String encodePath(String path) {
@@ -420,5 +371,58 @@ public class MediaService {
         }
 
         return sb.toString();
+    }
+
+    private void validateAllowedFile(MultipartFile file) {
+        String originalFilename = file.getOriginalFilename();
+        String extension = extractExtension(originalFilename);
+        String contentType = normalizeContentType(file.getContentType());
+
+        if (!StringUtils.hasText(extension) || !ALLOWED_EXTENSIONS.contains(extension)) {
+            throw new ApiException(
+                    400,
+                    ErrorCode.VALIDATION_ERROR,
+                    "Unsupported file extension. Allowed: jpg, jpeg, png, webp, gif, mp4, webm, mov"
+            );
+        }
+
+        if (!StringUtils.hasText(contentType) || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
+            throw new ApiException(
+                    400,
+                    ErrorCode.VALIDATION_ERROR,
+                    "Unsupported file type. Allowed: jpeg, png, webp, gif, mp4, webm, mov"
+            );
+        }
+
+        if ("svg".equals(extension) || "image/svg+xml".equals(contentType)) {
+            throw new ApiException(
+                    400,
+                    ErrorCode.VALIDATION_ERROR,
+                    "SVG files are not allowed"
+            );
+        }
+    }
+
+    private static String extractExtension(String filename) {
+        if (!StringUtils.hasText(filename)) {
+            return "";
+        }
+
+        String clean = filename.trim();
+        int dot = clean.lastIndexOf('.');
+
+        if (dot < 0 || dot == clean.length() - 1) {
+            return "";
+        }
+
+        return clean.substring(dot + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeContentType(String contentType) {
+        if (!StringUtils.hasText(contentType)) {
+            return "";
+        }
+
+        return contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
     }
 }

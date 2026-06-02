@@ -66,7 +66,7 @@ public class SecurityConfig {
 
 
             auth.requestMatchers("/actuator/health").permitAll();
-
+            auth.requestMatchers("/health").permitAll();
             if (isDev) {
                 auth.requestMatchers(
                         "/swagger-ui.html",
@@ -151,9 +151,15 @@ public class SecurityConfig {
         return Arrays.stream(csv.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
+                .map(SecurityConfig::removeTrailingSlash)
                 .toList();
     }
-
+    private static String removeTrailingSlash(String value) {
+        if (value.length() > 1 && value.endsWith("/")) {
+            return value.substring(0, value.length() - 1);
+        }
+        return value;
+    }
     private static void writeError(
             HttpServletResponse response,
             HttpServletRequest request,
