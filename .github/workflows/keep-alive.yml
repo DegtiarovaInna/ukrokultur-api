@@ -1,0 +1,15 @@
+name: Keep Render and Supabase awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          curl -fsS "${{ secrets.BACKEND_HEALTH_URL }}"
