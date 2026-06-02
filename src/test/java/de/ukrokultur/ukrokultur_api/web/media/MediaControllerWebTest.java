@@ -15,7 +15,8 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-
+import de.ukrokultur.ukrokultur_api.common.error.ValidationMessageResolver;
+import org.springframework.context.annotation.Import;
 import java.util.List;
 
 import static org.hamcrest.Matchers.hasSize;
@@ -27,7 +28,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-
+@Import(ValidationMessageResolver.class)
 @WebMvcTest(
         controllers = MediaController.class,
         excludeFilters = @ComponentScan.Filter(
